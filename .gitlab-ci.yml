@@ -1,0 +1,158 @@
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+
+variables:
+  DEPLOY_ENVIRONMENT:
+    value: "Select one"
+    options:
+      - "Select one"
+      - "VALIDATE"
+      - "IMPLEMENT"
+      - "destroy"
+    description: "The deployment target."
+  AWS_ACCESS_KEY_ID:
+    value: ""
+    description: "Temporary AWS access key. Prefer protected CI/CD variables or approved federation."
+  AWS_SECRET_ACCESS_KEY:
+    value: ""
+    description: "Temporary AWS secret key. Prefer protected CI/CD variables or approved federation."
+  AWS_SESSION_TOKEN:
+    value: ""
+    description: "Temporary AWS session token. Required when using temporary STS credentials."
+  AWS_REGION: "us-east-1"
+  DEBUG_CI: "false"
+  TF_SWITCH: "1.9.8"
+  TF_TOKEN_gitlab_com: "$CI_JOB_TOKEN"
+  TARGET_ROLE_NAME: "ProwlerAuditRole"
+  REPORTS_PREFIX: "aws"
+  UPLOAD_TO_S3: "true"
+  OUTPUT_ROOT: "output"
+  PROWLER_SERVICES: "iam s3 cloudtrail lambda eks rds"
+  PROWLER_STATUS_FILTER: "FAIL"
+  PROWLER_SEVERITY_FILTER: "critical high"
+  PROWLER_OUTPUT_FORMATS: "csv json-ocsf html"
+  PROWLER_IGNORE_EXIT_CODE: "true"
+  MAX_PARALLEL_ACCOUNTS: "1"
+
+image: 751178672067.dkr.ecr.us-east-1.amazonaws.com/terraform:tfswitch-latest
+
+stages:
+  - prepare
+  - validate
+  - plan
+  - apply
+  - destroy
+
+.setup: &setup
+  tags:
+    - tools
+  before_script:
+    - export AWS_DEFAULT_REGION="$AWS_REGION"
+    - |
+      if [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then unset AWS_ACCESS_KEY_ID; fi
+      if [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then unset AWS_SECRET_ACCESS_KEY; fi
+      if [ -z "${AWS_SESSION_TOKEN:-}" ]; then unset AWS_SESSION_TOKEN; fi
+    - |
+      if [ "$DEBUG_CI" = "true" ]; then
+        set -x
+      fi
+    - |
+      if command -v tfswitch >/dev/null 2>&1; then
+        tfswitch "$TF_SWITCH"
+      fi
+    - terraform version
+    - |
+      export PYTHON_BIN="$(command -v python3 || command -v python)"
+      "$PYTHON_BIN" --version
+      "$PYTHON_BIN" -m pip install --user --no-cache-dir awscli prowler
+      export PATH="$HOME/.local/bin:$PATH"
+      aws --version
+    - |
+      if [ -n "${MANAGEMENT_ROLE_ARN:-}" ]; then
+        echo "Assuming management role for AWS access."
+        set +x
+        CREDS_JSON="$(aws sts assume-role --role-arn "$MANAGEMENT_ROLE_ARN" --role-session-name "prowler-management-${CI_PIPELINE_ID}" --query Credentials --output json)"
+        export AWS_ACCESS_KEY_ID="$(printf '%s' "$CREDS_JSON" | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["AccessKeyId"])')"
+        export AWS_SECRET_ACCESS_KEY="$(printf '%s' "$CREDS_JSON" | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["SecretAccessKey"])')"
+        export AWS_SESSION_TOKEN="$(printf '%s' "$CREDS_JSON" | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["SessionToken"])')"
+        unset CREDS_JSON
+      fi
+
+prepare:
+  <<: *setup
+  stage: prepare
+  script:
+    - echo PREPARED
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "VALIDATE"'
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
+    - if: '$DEPLOY_ENVIRONMENT == "destroy"'
+
+validate:
+  <<: *setup
+  stage: validate
+  script:
+    - terraform fmt -check -recursive terraform
+    - terraform -chdir=terraform/target-account-role init -backend=false
+    - terraform -chdir=terraform/target-account-role validate
+    - terraform -chdir=terraform/management-account init -backend=false
+    - terraform -chdir=terraform/management-account validate
+    - "$PYTHON_BIN" -m py_compile scripts/consolidate_reports.py scripts/generate_summary.py
+    - test -f config/prowler_services.yml
+    - test -f scripts/discover_aws_accounts.sh
+    - test -f scripts/assume_role.sh
+    - test -f scripts/run_prowler_aws.sh
+    - test -f scripts/run_prowler_all_accounts.sh
+    - test -f scripts/upload_reports_s3.sh
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "VALIDATE"'
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
+
+plan:
+  <<: *setup
+  stage: plan
+  script:
+    - bash scripts/discover_aws_accounts.sh
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - output/accounts/accounts.txt
+      - output/accounts/accounts.json
+  dependencies:
+    - validate
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "VALIDATE"'
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
+
+apply:
+  <<: *setup
+  stage: apply
+  script:
+    - bash scripts/run_prowler_all_accounts.sh
+    - "$PYTHON_BIN" scripts/consolidate_reports.py
+    - "$PYTHON_BIN" scripts/generate_summary.py
+    - bash scripts/upload_reports_s3.sh
+  artifacts:
+    when: always
+    expire_in: 1 day
+    paths:
+      - output/
+  when: manual
+  dependencies:
+    - plan
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
+
+destroy:
+  <<: *setup
+  stage: destroy
+  script:
+    - echo "Destroy is not supported for this MVP security audit pipeline."
+    - echo "No AWS resources or findings will be deleted by this project."
+    - exit 1
+  when: manual
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "destroy"'

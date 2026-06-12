@@ -1,0 +1,13 @@
+aws_region        = "us-east-1"
+bucket_name       = "security-audit-prowler-reports"
+reports_prefix    = "aws"
+pipeline_role_arn = "arn:aws:iam::<management-account-id>:role/<security-pipeline-role>"
+
+report_expiration_days            = 365
+noncurrent_version_expiration_days = 90
+force_destroy                     = false
+
+tags = {
+  Project = "prowler-aws-security-audit"
+  Managed = "terraform"
+}

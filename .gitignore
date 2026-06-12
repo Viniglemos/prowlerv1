@@ -1,0 +1,45 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Internal documentation and local agent materials
+AGENTS.md
+docs/
+skills/
+
+# AWS credentials and local config
+.aws/
+aws-credentials*
+credentials
+config/aws*
+
+# Prowler and report outputs
+output/
+reports/
+prowler-output/
+*.jsonl
+*.csv
+*.html
+
+# Terraform local files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

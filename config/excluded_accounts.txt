@@ -1,0 +1,2 @@
+# Optional denylist of AWS account IDs to skip.
+# One account ID per line.
