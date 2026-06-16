@@ -1,2 +1,0 @@
-# Optional allowlist of AWS account IDs to scan.
-# Leave empty to include all discovered ACTIVE accounts except excluded accounts.

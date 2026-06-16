@@ -1,0 +1,46 @@
+{{- if .Values.workerBeat.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-worker-beat
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "prowler-app.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-beat
+  template:
+    metadata:
+      labels:
+        {{- include "prowler-app.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker-beat
+    spec:
+      serviceAccountName: {{ include "prowler-app.serviceAccountName" . }}
+      {{- if .Values.imagePullSecrets.enabled }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets.name | quote }}
+      {{- end }}
+      containers:
+        - name: worker-beat
+          image: {{ include "prowler-app.apiImage" . | quote }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command:
+            - /home/prowler/docker-entrypoint.sh
+            - beat
+          envFrom:
+            - configMapRef:
+                name: {{ include "prowler-app.fullname" . }}-config
+            - secretRef:
+                name: {{ include "prowler-app.secretName" . }}
+            - secretRef:
+                name: {{ include "prowler-app.postgresSecretName" . }}
+          resources:
+            {{- toYaml .Values.workerBeat.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

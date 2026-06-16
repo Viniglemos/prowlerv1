@@ -1,0 +1,101 @@
+{{- if .Values.nightlyScans.enabled }}
+{{- $root := . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-scan-trigger
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+data:
+  trigger-scan.sh: |
+    #!/bin/sh
+    set -eu
+
+    if [ -z "${PROWLER_APP_API_TOKEN:-}" ]; then
+      echo "PROWLER_APP_API_TOKEN is required." >&2
+      exit 2
+    fi
+
+    if [ -z "${PROVIDER_IDS:-}" ]; then
+      echo "No provider IDs configured for this job."
+      exit 0
+    fi
+
+    for provider_id in ${PROVIDER_IDS}; do
+      body="$(printf '%s' "${SCAN_REQUEST_BODY_TEMPLATE}" | sed "s/{{ "{{" }}PROVIDER_ID{{ "}}" }}/${provider_id}/g")"
+      echo "Triggering Prowler App scan for provider ${provider_id}"
+      curl -fsS \
+        -X POST \
+        -H "Authorization: Bearer ${PROWLER_APP_API_TOKEN}" \
+        -H "Content-Type: application/vnd.api+json" \
+        -d "${body}" \
+        "${PROWLER_APP_API_BASE_URL}${PROWLER_SCAN_ENDPOINT}"
+    done
+---
+{{- range $job := .Values.nightlyScans.jobs }}
+{{- if $job.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "prowler-app.fullname" $root }}-scan-{{ $job.name }}
+  labels:
+    {{- include "prowler-app.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: scan-trigger
+spec:
+  schedule: {{ $job.schedule | quote }}
+  timeZone: {{ $root.Values.nightlyScans.timeZone | quote }}
+  concurrencyPolicy: {{ $root.Values.nightlyScans.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ $root.Values.nightlyScans.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $root.Values.nightlyScans.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $root.Values.nightlyScans.backoffLimit }}
+      activeDeadlineSeconds: {{ $root.Values.nightlyScans.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "prowler-app.selectorLabels" $root | nindent 12 }}
+            app.kubernetes.io/component: scan-trigger
+        spec:
+          restartPolicy: Never
+          {{- if $root.Values.imagePullSecrets.enabled }}
+          imagePullSecrets:
+            - name: {{ $root.Values.imagePullSecrets.name | quote }}
+          {{- end }}
+          containers:
+            - name: scan-trigger
+              image: "{{ $root.Values.images.cron.repository }}:{{ $root.Values.images.cron.tag }}"
+              imagePullPolicy: {{ $root.Values.images.cron.pullPolicy }}
+              command:
+                - /bin/sh
+                - /scripts/trigger-scan.sh
+              env:
+                - name: PROWLER_APP_API_BASE_URL
+                  value: {{ $root.Values.nightlyScans.apiBaseUrl | quote }}
+                - name: PROWLER_SCAN_ENDPOINT
+                  value: {{ $root.Values.nightlyScans.scanEndpoint | quote }}
+                - name: SCAN_REQUEST_BODY_TEMPLATE
+                  value: {{ $root.Values.nightlyScans.requestBodyTemplate | quote }}
+                - name: PROVIDER_IDS
+                  value: {{ join " " $job.providerIds | quote }}
+                - name: PROWLER_APP_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ required "nightlyScans.auth.existingSecret is required when nightlyScans.enabled=true" $root.Values.nightlyScans.auth.existingSecret | quote }}
+                      key: {{ $root.Values.nightlyScans.auth.tokenKey | quote }}
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: scripts
+              configMap:
+                name: {{ include "prowler-app.fullname" $root }}-scan-trigger
+                defaultMode: 0755
+          {{- with $root.Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

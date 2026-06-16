@@ -1,232 +1,326 @@
-# AWS Security Audit with Prowler Open Source
+# Prowler App on Kubernetes
 
-Open-source AWS security audit workflow using Prowler Community/Open Source.
+This repository packages the open-source Prowler App for internal Kubernetes usage.
 
-Detailed project documentation, standards, and phase history should live in the internal GitLab/Backstage documentation space. This repository keeps only the executable project files and a minimal operating guide.
+The current direction is intentionally simple:
 
-## MVP scope
+- Run the Prowler App in Kubernetes.
+- Use the company-managed Postgres service.
+- Deploy Valkey with the Helm chart.
+- Keep the application reachable only through internal/VPN network paths.
+- Trigger scheduled AWS and Kubernetes scans through the Prowler App API.
+- Send a weekly security posture summary to Teams through n8n.
+- Avoid custom report processing, daily alert noise, Grafana dashboards, and remediation automation.
 
-Provider:
-
-- AWS
-
-Services:
-
-- IAM
-- S3
-- CloudTrail
-- Lambda
-- EKS
-- RDS
-
-Persisted findings:
-
-- Status: `FAIL`
-- Severity: `critical` and `high`
-
-Output formats:
-
-- CSV
-- JSON-OCSF / JSONL
-- HTML
-
-Out of scope for the MVP:
-
-- Prowler Cloud
-- Paid SaaS platforms
-- Loki
-- Grafana
-- ClickUp automation
-- Automatic remediation
-- Full cloud resource inventory
-
-## Repository layout
+## Repository Layout
 
 ```text
 .
 |-- README.md
-|-- .gitignore
 |-- .gitlab-ci.yml
-|-- config/
-|   |-- excluded_accounts.txt
-|   |-- included_accounts.txt
-|   `-- prowler_services.yml
-|-- scripts/
-|   |-- assume_role.sh
-|   |-- consolidate_reports.py
-|   |-- discover_aws_accounts.sh
-|   |-- generate_summary.py
-|   |-- run_prowler_all_accounts.sh
-|   |-- run_prowler_aws.sh
-|   |-- start_prowler_dashboard.sh
-|   `-- upload_reports_s3.sh
-`-- terraform/
-    |-- management-account/
-    |   |-- main.tf
-    |   |-- outputs.tf
-    |   |-- s3-bucket.tf
-    |   |-- s3-policy.tf
-    |   |-- terraform.tfvars.example
-    |   |-- variables.tf
-    |   `-- versions.tf
-    `-- target-account-role/
-        |-- iam-policy.tf
-        |-- iam-role.tf
-        |-- main.tf
-        |-- terraform.tfvars.example
-        |-- variables.tf
-        |-- outputs.tf
-        `-- versions.tf
+|-- terraform/
+|   |-- prowler-app-irsa/
+|   `-- prowler-target-role/
+`-- helm/
+    `-- prowler-app/
+        |-- Chart.yaml
+        |-- values.yaml
+        `-- templates/
 ```
 
-## Security rules
+## Helm Chart
+
+The chart is in `helm/prowler-app`.
+
+It creates:
+
+- Prowler API Deployment and Service.
+- Prowler UI Deployment and Service.
+- Prowler worker Deployment.
+- Prowler worker beat Deployment.
+- Prowler MCP Deployment and Service.
+- Valkey Deployment, Service, and optional PVC.
+- ServiceAccount.
+- Optional private Gateway API `HTTPRoute`.
+- Optional CronJobs that trigger scans through the Prowler App API.
+
+It does not create:
+
+- Postgres.
+- S3 buckets.
+- Public ingress.
+- Grafana dashboards or alerts.
+- n8n workflows.
+- Teams webhooks.
+- Custom Prowler scan containers.
+
+## Runtime Model
+
+```text
+User on VPN
+  -> private Kubernetes route/service
+  -> Prowler UI
+  -> Prowler API
+  -> Postgres provided by company
+  -> Valkey deployed by this chart
+
+CronJob
+  -> Prowler App API
+  -> scan provider IDs configured in the App
+
+Weekly summary agent
+  -> read-only findings source
+  -> n8n webhook/workflow
+  -> private Teams channel
+```
+
+## Network Access
+
+The app must remain private.
+
+Default chart behavior:
+
+- Services are `ClusterIP`.
+- Gateway is disabled.
+- No public hostname is configured.
+
+Enable `gateway.enabled=true` only when the target Gateway/route is internal and reachable through the approved VPN/private network path.
+
+## Postgres
+
+Postgres is external to this chart.
+
+Set:
+
+```yaml
+postgres:
+  host: "<company-postgres-host>"
+  existingSecret: "prowler-postgres-secret"
+```
+
+The secret must contain:
+
+```text
+POSTGRES_ADMIN_PASSWORD
+POSTGRES_PASSWORD
+```
+
+## Valkey
+
+Valkey is deployed by this chart because there is no company-managed Valkey service.
+
+Default:
+
+```yaml
+valkey:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 2Gi
+```
+
+## Nightly Scans
+
+Scheduled scan triggers are disabled by default.
+
+When enabled, the default split is:
+
+```text
+01:30 - Kubernetes provider
+02:00 - AWS provider group A
+04:00 - AWS provider group B
+Timezone: America/Sao_Paulo
+```
+
+Configure real Prowler App provider IDs:
+
+```yaml
+nightlyScans:
+  enabled: true
+  auth:
+    existingSecret: "prowler-app-api-token"
+  jobs:
+    - name: kubernetes
+      enabled: true
+      schedule: "30 1 * * *"
+      providerIds:
+        - "<kubernetes-provider-id>"
+    - name: aws-group-a
+      enabled: true
+      schedule: "0 2 * * *"
+      providerIds:
+        - "<aws-provider-id-a>"
+    - name: aws-group-b
+      enabled: true
+      schedule: "0 4 * * *"
+      providerIds:
+        - "<aws-provider-id-b>"
+```
+
+The API endpoint and body template are configurable in `values.yaml` because they should be confirmed against the deployed Prowler App API version before production use.
+
+## S3 Export
+
+Prowler App has its own integration/export path for S3. This repository no longer keeps custom scripts for generating, filtering, consolidating, or uploading raw Prowler reports.
+
+If S3 export is required, configure it through the Prowler App/provider integration and keep the bucket private, encrypted, and scoped to the required prefix.
+
+## Weekly Teams Summary
+
+Weekly summaries should be sent to Teams through n8n, not as daily alerts.
+
+Recommended flow:
+
+```text
+Prowler App
+  -> read-only summary agent
+  -> n8n webhook/workflow
+  -> Teams private channel
+```
+
+## AWS Access Roles
+
+Prowler App needs AWS roles to scan accounts without static keys.
+
+The intended model is:
+
+```text
+Prowler App pod
+  -> Kubernetes ServiceAccount
+  -> IRSA role in the EKS account
+  -> sts:AssumeRole
+  -> ProwlerScanRole in each target AWS account
+```
+
+This repository includes Terraform for the two IAM layers:
+
+- `terraform/prowler-app-irsa`: creates the IRSA role used by the Kubernetes ServiceAccount.
+- `terraform/prowler-target-role`: creates the target account role assumed by the IRSA role.
+
+The target role attaches AWS managed read-only policies:
+
+- `SecurityAudit`
+- `ViewOnlyAccess`
+
+Do not create AWS access keys for the Prowler App. Use IRSA and assume-role only.
+
+### Creation Order
+
+1. Create the IRSA role in the EKS account.
+2. Create `ProwlerScanRole` in each target account, trusting the IRSA role ARN.
+3. Deploy the Helm chart with the IRSA annotation:
+
+```yaml
+serviceAccount:
+  irsaRoleArn: "<prowler-app-irsa-role-arn>"
+```
+
+4. Configure AWS providers in the Prowler App using the target role ARNs:
+
+```text
+arn:aws:iam::<target-account-id>:role/ProwlerScanRole
+```
+
+The optional `external_id` variable can be enabled for the target role trust policy if required by the Prowler App provider configuration.
+
+The summary should include:
+
+- Critical and high finding counts.
+- New or recurring critical risks.
+- Most affected providers/accounts/services.
+- Top recommended actions.
+- Link to the internal Prowler App behind VPN.
+
+The summary should not include:
+
+- Raw findings.
+- AWS credentials or temporary tokens.
+- Full account inventory.
+- Automatic remediation actions.
+- Broad `@team` mentions by default.
+
+The recommended cadence is weekly, after the nightly scan cycle has completed. Daily Teams messages should be avoided unless the project scope explicitly changes.
+
+## Validation
+
+Local validation:
+
+```bash
+helm lint helm/prowler-app
+
+helm template prowler-app helm/prowler-app \
+  --set app.authUrl=https://prowler-app.internal \
+  --set postgres.host=postgres.company.internal \
+  --set postgres.existingSecret=prowler-postgres-secret \
+  --set app.secrets.authSecret=dummy-auth-secret \
+  --set app.secrets.djangoTokenSigningKey=dummy-signing-key \
+  --set app.secrets.djangoTokenVerifyingKey=dummy-verifying-key \
+  --set app.secrets.djangoSecretsEncryptionKey=dummy-encryption-key
+```
+
+No AWS credentials are required for these validations.
+
+Terraform validation:
+
+```bash
+terraform -chdir=terraform/prowler-app-irsa fmt
+terraform -chdir=terraform/prowler-target-role fmt
+terraform -chdir=terraform/prowler-app-irsa init -backend=false
+terraform -chdir=terraform/prowler-app-irsa validate
+terraform -chdir=terraform/prowler-target-role init -backend=false
+terraform -chdir=terraform/prowler-target-role validate
+```
+
+## GitLab Variables
+
+Helm deploy variables:
+
+```text
+KUBE_CONTEXT
+KUBE_NAMESPACE
+APP_AUTH_URL
+POSTGRES_HOST
+POSTGRES_EXISTING_SECRET
+PROWLER_APP_SECRET_EXISTING_SECRET
+PROWLER_APP_IRSA_ROLE_ARN
+```
+
+Terraform variables for the IRSA role:
+
+```text
+AWS_REGION
+TF_INIT_ARGS
+ALLOW_LOCAL_TF_STATE
+TF_VAR_oidc_provider_arn
+TF_VAR_oidc_provider_url
+TF_VAR_target_account_ids
+```
+
+Example:
+
+```text
+TF_VAR_target_account_ids=["111111111111","222222222222"]
+```
+
+Terraform variables for the target account role:
+
+```text
+AWS_REGION
+TF_INIT_ARGS
+ALLOW_LOCAL_TF_STATE
+TF_VAR_trusted_irsa_role_arn
+TF_VAR_external_id
+```
+
+`TF_INIT_ARGS` defaults to `-backend=false` for validation. For real applies, configure the company-approved Terraform backend in GitLab before running manual apply jobs. The apply jobs block local state by default; use `ALLOW_LOCAL_TF_STATE=true` only for disposable tests.
+
+## Security Notes
 
 - Do not commit AWS credentials.
-- Do not print temporary STS credentials.
-- Do not create static AWS keys.
-- Keep IAM permissions read-only unless explicitly approved.
-- Keep S3 report buckets private and encrypted.
-- Persist only filtered critical/high failed findings.
-- Do not persist full unfiltered Prowler outputs in the MVP.
-- Security findings should not fail the pipeline by themselves.
-- Technical execution errors may fail the pipeline.
-
-## Terraform
-
-Target-account audit role:
-
-```bash
-cd terraform/target-account-role
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform plan
-terraform apply
-```
-
-Management-account reports bucket:
-
-```bash
-cd terraform/management-account
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform plan
-terraform apply
-```
-
-Do not commit real `terraform.tfvars` files.
-
-## Local flow
-
-Discover active AWS accounts:
-
-```bash
-scripts/discover_aws_accounts.sh
-```
-
-Run one account:
-
-```bash
-scripts/run_prowler_aws.sh 123456789012
-```
-
-Run all discovered accounts:
-
-```bash
-scripts/run_prowler_all_accounts.sh
-```
-
-Consolidate reports and generate summary:
-
-```bash
-python scripts/consolidate_reports.py
-python scripts/generate_summary.py
-```
-
-Upload filtered reports to S3:
-
-```bash
-export REPORTS_BUCKET=security-audit-prowler-reports
-scripts/upload_reports_s3.sh
-```
-
-Start local dashboard from filtered CSV outputs:
-
-```bash
-scripts/start_prowler_dashboard.sh
-```
-
-The dashboard binds to `127.0.0.1` by default and must not be exposed publicly without authentication.
-
-## Output structure
-
-Local outputs:
-
-```text
-output/<run-date>/pipeline-<pipeline-id>/
-|-- summary.md
-|-- consolidated-critical-high.csv
-|-- consolidated-critical-high.jsonl
-|-- accounts/
-|   `-- <account-id>/
-`-- logs/
-```
-
-S3 outputs:
-
-```text
-s3://security-audit-prowler-reports/
-`-- aws/
-    `-- YYYY/
-        `-- MM/
-            `-- DD/
-                `-- pipeline-<pipeline-id>/
-                    |-- summary.md
-                    |-- consolidated-critical-high.csv
-                    |-- consolidated-critical-high.jsonl
-                    |-- accounts/
-                    `-- logs/
-```
-
-## GitLab CI/CD
-
-The pipeline follows the company pattern:
-
-- `prepare`
-- `validate`
-- `plan`
-- `apply`
-- `destroy`
-
-`DEPLOY_ENVIRONMENT` controls behavior:
-
-- `VALIDATE`: validates Terraform/modules/scripts and discovers accounts.
-- `IMPLEMENT`: validates, discovers accounts, then enables manual `apply` to scan, consolidate, summarize, and upload filtered reports.
-- `destroy`: blocked guard job. Destruction is not supported for this MVP security audit pipeline.
-
-Configure protected GitLab variables as needed:
-
-- `DEPLOY_ENVIRONMENT`
-- `AWS_REGION`
-- `MANAGEMENT_ACCOUNT_ID`
-- `MANAGEMENT_ROLE_ARN`
-- `TARGET_ROLE_NAME`
-- `REPORTS_BUCKET`
-- `REPORTS_PREFIX`
-- `UPLOAD_TO_S3`
-- `PROWLER_SERVICES`
-- `PROWLER_STATUS_FILTER`
-- `PROWLER_SEVERITY_FILTER`
-- `MAX_PARALLEL_ACCOUNTS`
-
-Defaults:
-
-```text
-TARGET_ROLE_NAME=ProwlerAuditRole
-PROWLER_SERVICES="iam s3 cloudtrail lambda eks rds"
-PROWLER_STATUS_FILTER="FAIL"
-PROWLER_SEVERITY_FILTER="critical high"
-UPLOAD_TO_S3=true
-REPORTS_PREFIX=aws
-```
-
-GitLab artifacts are used only to pass files between jobs and expire after one day. S3 remains the official long-term evidence repository.
+- Do not store AWS static keys in Kubernetes Secrets.
+- Use IRSA for Prowler App pods.
+- Scope target role trust to the Prowler App IRSA role.
+- Keep the Prowler App private behind VPN/internal network controls.
+- Keep Postgres credentials in Kubernetes Secrets or a company-approved secret system.
+- Keep Gateway/Ingress disabled until the private route is approved.
+- Do not enable alerts, remediation, or external integrations unless explicitly requested.

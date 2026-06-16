@@ -1,0 +1,206 @@
+replicaCount: 1
+
+nameOverride: prowler-app
+fullnameOverride: prowler-app
+
+imagePullSecrets:
+  enabled: true
+  name: reptools
+
+serviceAccount:
+  create: true
+  irsaRoleArn: ""
+  annotations: {}
+  name:
+
+images:
+  api:
+    repository: prowlercloud/prowler-api
+    tag: stable
+    pullPolicy: IfNotPresent
+  ui:
+    repository: prowlercloud/prowler-ui
+    tag: stable
+    pullPolicy: IfNotPresent
+  mcp:
+    repository: prowlercloud/prowler-mcp
+    tag: stable
+    pullPolicy: IfNotPresent
+  valkey:
+    repository: valkey/valkey
+    tag: 7-alpine3.19
+    pullPolicy: IfNotPresent
+  cron:
+    repository: curlimages/curl
+    tag: 8.11.1
+    pullPolicy: IfNotPresent
+
+postgres:
+  external: true
+  host: ""
+  port: 5432
+  database: prowler_db
+  adminUser: prowler_admin
+  appUser: prowler
+  existingSecret: ""
+  adminPasswordKey: POSTGRES_ADMIN_PASSWORD
+  appPasswordKey: POSTGRES_PASSWORD
+
+valkey:
+  enabled: true
+  port: 6379
+  username: ""
+  password: ""
+  database: 0
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+neo4j:
+  enabled: false
+  host: ""
+  port: 7687
+  user: neo4j
+  existingSecret: ""
+  passwordKey: NEO4J_PASSWORD
+
+app:
+  authUrl: ""
+  allowedHosts: "localhost,127.0.0.1,prowler-app-api"
+  djangoPort: 8080
+  uiPort: 3000
+  mcpPort: 8000
+  loggingLevel: INFO
+  loggingFormatter: human_readable
+  djangoWorkers: 4
+  accessTokenLifetime: 30
+  refreshTokenLifetime: 1440
+  secrets:
+    create: true
+    existingSecret: ""
+    authSecret: ""
+    djangoTokenSigningKey: ""
+    djangoTokenVerifyingKey: ""
+    djangoSecretsEncryptionKey: ""
+  extraConfig: {}
+  extraSecret: {}
+
+api:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+ui:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+workerBeat:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+mcp:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+service:
+  ui:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+  api:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  mcp:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+
+gateway:
+  enabled: false
+  host: ""
+  pathPrefix: "/"
+  parentRef:
+    name: ""
+    namespace: ""
+
+nightlyScans:
+  enabled: false
+  timeZone: America/Sao_Paulo
+  apiBaseUrl: "http://prowler-app-api:8080/api/v1"
+  scanEndpoint: "/scans"
+  auth:
+    existingSecret: ""
+    tokenKey: PROWLER_APP_API_TOKEN
+  requestBodyTemplate: |
+    {"data":{"type":"scans","attributes":{},"relationships":{"provider":{"data":{"type":"providers","id":"{{PROVIDER_ID}}"}}}}}
+  jobs:
+    - name: kubernetes
+      enabled: true
+      schedule: "30 1 * * *"
+      providerIds: []
+    - name: aws-group-a
+      enabled: true
+      schedule: "0 2 * * *"
+      providerIds: []
+    - name: aws-group-b
+      enabled: true
+      schedule: "0 4 * * *"
+      providerIds: []
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  backoffLimit: 1
+  activeDeadlineSeconds: 10800
+
+projectMetadata:
+  gitlabUrl: ""
+  maintainer: ""
+
+podAnnotations: {}
+
+nodeSelector:
+  arch: amd64
+tolerations: []
+affinity: {}
