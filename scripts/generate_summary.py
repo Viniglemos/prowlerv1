@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 
-MVP_SERVICES = ["iam", "s3", "cloudtrail", "lambda", "eks", "rds"]
+MVP_SERVICES = ["iam", "s3", "cloudtrail"]
 
 
 def default_pipeline_dir() -> Path:
@@ -128,12 +128,6 @@ def recommended_actions(findings: list[dict[str, str]], failed_accounts: list[st
         actions.append("Review public S3 findings and confirm Block Public Access, bucket policies, and ACLs.")
     if count_service(findings, "cloudtrail"):
         actions.append("Prioritize CloudTrail critical/high findings to protect audit logging.")
-    if count_service(findings, "lambda"):
-        actions.append("Review Lambda execution roles, public exposure, and sensitive configuration findings.")
-    if count_service(findings, "eks"):
-        actions.append("Review EKS endpoint exposure, access control, and control plane logging findings.")
-    if count_service(findings, "rds"):
-        actions.append("Review RDS public exposure, encryption, backup, snapshot, and deletion protection findings.")
     if not actions:
         actions.append("No critical/high failed findings were consolidated; confirm scan coverage and failed account logs.")
     return actions
@@ -209,9 +203,6 @@ def main() -> int:
             f"- IAM FullAccess findings: {count_contains(findings, 'iam', ['fullaccess'])}",
             f"- Public S3 findings: {count_contains(findings, 's3', ['public'])}",
             f"- CloudTrail critical/high findings: {count_service(findings, 'cloudtrail')}",
-            f"- Lambda critical/high findings: {count_service(findings, 'lambda')}",
-            f"- EKS critical/high findings: {count_service(findings, 'eks')}",
-            f"- RDS critical/high findings: {count_service(findings, 'rds')}",
             "",
             "## Recommended Next Actions",
             "",

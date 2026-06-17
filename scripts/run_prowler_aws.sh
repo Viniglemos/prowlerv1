@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROWLER_SERVICES="${PROWLER_SERVICES:-iam s3 cloudtrail lambda eks rds}"
+PROWLER_SERVICES="${PROWLER_SERVICES:-iam s3 cloudtrail}"
 PROWLER_STATUS_FILTER="${PROWLER_STATUS_FILTER:-FAIL}"
 PROWLER_SEVERITY_FILTER="${PROWLER_SEVERITY_FILTER:-critical high}"
 PROWLER_OUTPUT_FORMATS="${PROWLER_OUTPUT_FORMATS:-csv json-ocsf html}"
@@ -19,7 +19,7 @@ Runs Prowler Open Source against one AWS account by assuming ProwlerAuditRole.
 Only critical/high FAIL findings are written.
 
 Environment variables:
-  PROWLER_SERVICES          Default: iam s3 cloudtrail lambda eks rds
+  PROWLER_SERVICES          Default: iam s3 cloudtrail
   PROWLER_STATUS_FILTER     Default: FAIL
   PROWLER_SEVERITY_FILTER   Default: critical high
   PROWLER_OUTPUT_FORMATS    Default: csv json-ocsf html

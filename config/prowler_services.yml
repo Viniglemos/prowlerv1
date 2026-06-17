@@ -3,9 +3,6 @@ aws:
     - iam
     - s3
     - cloudtrail
-    - lambda
-    - eks
-    - rds
 
 filters:
   status:

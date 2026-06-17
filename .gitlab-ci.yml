@@ -2,7 +2,7 @@ workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
-    - if: '$CI_PIPELINE_SOURCE == "api"'
+    - when: never
 
 variables:
   DEPLOY_ENVIRONMENT:
@@ -31,7 +31,7 @@ variables:
   REPORTS_PREFIX: "aws"
   UPLOAD_TO_S3: "true"
   OUTPUT_ROOT: "output"
-  PROWLER_SERVICES: "iam s3 cloudtrail lambda eks rds"
+  PROWLER_SERVICES: "iam s3 cloudtrail"
   PROWLER_STATUS_FILTER: "FAIL"
   PROWLER_SEVERITY_FILTER: "critical high"
   PROWLER_OUTPUT_FORMATS: "csv json-ocsf html"
@@ -101,7 +101,7 @@ validate:
     - terraform -chdir=terraform/target-account-role validate
     - terraform -chdir=terraform/management-account init -backend=false
     - terraform -chdir=terraform/management-account validate
-    - "$PYTHON_BIN" -m py_compile scripts/consolidate_reports.py scripts/generate_summary.py
+    - $PYTHON_BIN -m py_compile scripts/consolidate_reports.py scripts/generate_summary.py
     - test -f config/prowler_services.yml
     - test -f scripts/discover_aws_accounts.sh
     - test -f scripts/assume_role.sh
@@ -133,8 +133,8 @@ apply:
   stage: apply
   script:
     - bash scripts/run_prowler_all_accounts.sh
-    - "$PYTHON_BIN" scripts/consolidate_reports.py
-    - "$PYTHON_BIN" scripts/generate_summary.py
+    - $PYTHON_BIN scripts/consolidate_reports.py
+    - $PYTHON_BIN scripts/generate_summary.py
     - bash scripts/upload_reports_s3.sh
   artifacts:
     when: always

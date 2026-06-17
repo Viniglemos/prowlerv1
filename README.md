@@ -15,9 +15,6 @@ Services:
 - IAM
 - S3
 - CloudTrail
-- Lambda
-- EKS
-- RDS
 
 Persisted findings:
 
@@ -213,7 +210,6 @@ Configure protected GitLab variables as needed:
 - `REPORTS_BUCKET`
 - `REPORTS_PREFIX`
 - `UPLOAD_TO_S3`
-- `PROWLER_SERVICES`
 - `PROWLER_STATUS_FILTER`
 - `PROWLER_SEVERITY_FILTER`
 - `MAX_PARALLEL_ACCOUNTS`
@@ -222,7 +218,7 @@ Defaults:
 
 ```text
 TARGET_ROLE_NAME=ProwlerAuditRole
-PROWLER_SERVICES="iam s3 cloudtrail lambda eks rds"
+PROWLER_SERVICES="iam s3 cloudtrail"
 PROWLER_STATUS_FILTER="FAIL"
 PROWLER_SEVERITY_FILTER="critical high"
 UPLOAD_TO_S3=true

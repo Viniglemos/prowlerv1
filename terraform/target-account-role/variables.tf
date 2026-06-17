@@ -21,7 +21,7 @@ variable "trusted_principal_arn" {
 
   validation {
     condition     = can(regex("^arn:aws(-[a-z]+)?:iam::[0-9]{12}:((role|user)/.+|root)$", var.trusted_principal_arn))
-    error_message = "trusted_principal_arn must be an IAM principal ARN, such as arn:aws:iam::123456789012:role/SecurityAuditPipelineRole."
+    error_message = "trusted_principal_arn must be an IAM principal ARN, such as arn:aws:iam::123456789012:role/ProwlerPipelineRole."
   }
 }
 

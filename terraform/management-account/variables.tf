@@ -32,7 +32,7 @@ variable "pipeline_role_arn" {
 
   validation {
     condition     = can(regex("^arn:aws(-[a-z]+)?:iam::[0-9]{12}:role/.+$", var.pipeline_role_arn))
-    error_message = "pipeline_role_arn must be an IAM role ARN, such as arn:aws:iam::123456789012:role/SecurityAuditPipelineRole."
+    error_message = "pipeline_role_arn must be an IAM role ARN, such as arn:aws:iam::123456789012:role/ProwlerPipelineRole."
   }
 }
 
