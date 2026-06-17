@@ -1,0 +1,15 @@
+aws:
+  services:
+    - iam
+    - s3
+    - cloudtrail
+    - lambda
+    - eks
+    - rds
+
+filters:
+  status:
+    - FAIL
+  severity:
+    - critical
+    - high

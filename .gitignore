@@ -7,7 +7,6 @@
 AGENTS.md
 docs/
 skills/
-.agents/
 
 # AWS credentials and local config
 .aws/

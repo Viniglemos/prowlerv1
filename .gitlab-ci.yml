@@ -1,180 +1,159 @@
 workflow:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
-    - if: '$CI_COMMIT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "api"'
 
 variables:
-  HELM_RELEASE_NAME: "prowler-app"
-  KUBE_CONTEXT: ""
-  KUBE_NAMESPACE: "security-audit"
-  APP_AUTH_URL: ""
-  POSTGRES_HOST: ""
-  POSTGRES_EXISTING_SECRET: "prowler-postgres-secret"
-  PROWLER_APP_SECRET_EXISTING_SECRET: ""
-  PROWLER_APP_IRSA_ROLE_ARN: ""
+  DEPLOY_ENVIRONMENT:
+    value: "Select one"
+    options:
+      - "Select one"
+      - "VALIDATE"
+      - "IMPLEMENT"
+      - "destroy"
+    description: "The deployment target."
+  AWS_ACCESS_KEY_ID:
+    value: ""
+    description: "Temporary AWS access key. Prefer protected CI/CD variables or approved federation."
+  AWS_SECRET_ACCESS_KEY:
+    value: ""
+    description: "Temporary AWS secret key. Prefer protected CI/CD variables or approved federation."
+  AWS_SESSION_TOKEN:
+    value: ""
+    description: "Temporary AWS session token. Required when using temporary STS credentials."
   AWS_REGION: "us-east-1"
-  TF_INIT_ARGS: "-backend=false"
-  ALLOW_LOCAL_TF_STATE: "false"
-  TF_VAR_oidc_provider_arn: ""
-  TF_VAR_oidc_provider_url: ""
-  TF_VAR_target_account_ids: "[]"
-  TF_VAR_trusted_irsa_role_arn: ""
-  TF_VAR_external_id: ""
+  DEBUG_CI: "false"
+  TF_SWITCH: "1.9.8"
+  TF_TOKEN_gitlab_com: "$CI_JOB_TOKEN"
+  TARGET_ROLE_NAME: "ProwlerAuditRole"
+  ROLE_DURATION_SECONDS: "14400"
+  REPORTS_PREFIX: "aws"
+  UPLOAD_TO_S3: "true"
+  OUTPUT_ROOT: "output"
+  PROWLER_SERVICES: "iam s3 cloudtrail lambda eks rds"
+  PROWLER_STATUS_FILTER: "FAIL"
+  PROWLER_SEVERITY_FILTER: "critical high"
+  PROWLER_OUTPUT_FORMATS: "csv json-ocsf html"
+  PROWLER_IGNORE_EXIT_CODE: "true"
+  MAX_PARALLEL_ACCOUNTS: "1"
+
+image: 751178672067.dkr.ecr.us-east-1.amazonaws.com/terraform:tfswitch-latest
 
 stages:
+  - prepare
   - validate
-  - infra_plan
-  - infra_apply
-  - deploy
+  - plan
+  - apply
+  - destroy
 
-helm_validate:
-  stage: validate
-  image:
-    name: alpine/helm:3.15.4
-    entrypoint: [""]
-  script:
-    - helm lint helm/prowler-app
+.setup: &setup
+  tags:
+    - tools
+  before_script:
+    - export AWS_DEFAULT_REGION="$AWS_REGION"
     - |
-      helm template "$HELM_RELEASE_NAME" helm/prowler-app \
-        --set app.authUrl="${APP_AUTH_URL:-https://prowler-app.internal}" \
-        --set postgres.host="${POSTGRES_HOST:-postgres.example.internal}" \
-        --set postgres.existingSecret="${POSTGRES_EXISTING_SECRET}" \
-        --set app.secrets.authSecret="dummy-auth-secret" \
-        --set app.secrets.djangoTokenSigningKey="dummy-signing-key" \
-        --set app.secrets.djangoTokenVerifyingKey="dummy-verifying-key" \
-        --set app.secrets.djangoSecretsEncryptionKey="dummy-encryption-key"
-
-terraform_validate:
-  stage: validate
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  script:
-    - terraform -chdir=terraform/prowler-app-irsa fmt -check
-    - terraform -chdir=terraform/prowler-target-role fmt -check
-    - terraform -chdir=terraform/prowler-app-irsa init -backend=false
-    - terraform -chdir=terraform/prowler-app-irsa validate
-    - terraform -chdir=terraform/prowler-target-role init -backend=false
-    - terraform -chdir=terraform/prowler-target-role validate
-
-terraform_plan_irsa:
-  stage: infra_plan
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  needs:
-    - terraform_validate
-  script:
+      if [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then unset AWS_ACCESS_KEY_ID; fi
+      if [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then unset AWS_SECRET_ACCESS_KEY; fi
+      if [ -z "${AWS_SESSION_TOKEN:-}" ]; then unset AWS_SESSION_TOKEN; fi
     - |
-      if [ -z "$TF_VAR_oidc_provider_arn" ] || [ -z "$TF_VAR_oidc_provider_url" ]; then
-        echo "TF_VAR_oidc_provider_arn and TF_VAR_oidc_provider_url are required." >&2
-        exit 2
+      if [ "$DEBUG_CI" = "true" ]; then
+        set -x
       fi
-    - terraform -chdir=terraform/prowler-app-irsa init $TF_INIT_ARGS
-    - terraform -chdir=terraform/prowler-app-irsa plan -out=tfplan -var="aws_region=$AWS_REGION"
+    - |
+      if command -v tfswitch >/dev/null 2>&1; then
+        tfswitch "$TF_SWITCH"
+      fi
+    - terraform version
+    - |
+      export PYTHON_BIN="$(command -v python3 || command -v python)"
+      "$PYTHON_BIN" --version
+      "$PYTHON_BIN" -m pip install --user --no-cache-dir awscli prowler
+      export PATH="$HOME/.local/bin:$PATH"
+      aws --version
+    - |
+      if [ -n "${MANAGEMENT_ROLE_ARN:-}" ]; then
+        echo "Assuming management role for AWS access."
+        set +x
+        CREDS_JSON="$(aws sts assume-role --role-arn "$MANAGEMENT_ROLE_ARN" --role-session-name "prowler-management-${CI_PIPELINE_ID}" --query Credentials --output json)"
+        export AWS_ACCESS_KEY_ID="$(printf '%s' "$CREDS_JSON" | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["AccessKeyId"])')"
+        export AWS_SECRET_ACCESS_KEY="$(printf '%s' "$CREDS_JSON" | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["SecretAccessKey"])')"
+        export AWS_SESSION_TOKEN="$(printf '%s' "$CREDS_JSON" | "$PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["SessionToken"])')"
+        unset CREDS_JSON
+      fi
+
+prepare:
+  <<: *setup
+  stage: prepare
+  script:
+    - echo PREPARED
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "VALIDATE"'
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
+    - if: '$DEPLOY_ENVIRONMENT == "destroy"'
+
+validate:
+  <<: *setup
+  stage: validate
+  script:
+    - terraform fmt -check -recursive terraform
+    - terraform -chdir=terraform/target-account-role init -backend=false
+    - terraform -chdir=terraform/target-account-role validate
+    - terraform -chdir=terraform/management-account init -backend=false
+    - terraform -chdir=terraform/management-account validate
+    - "$PYTHON_BIN" -m py_compile scripts/consolidate_reports.py scripts/generate_summary.py
+    - test -f config/prowler_services.yml
+    - test -f scripts/discover_aws_accounts.sh
+    - test -f scripts/assume_role.sh
+    - test -f scripts/run_prowler_aws.sh
+    - test -f scripts/run_prowler_all_accounts.sh
+    - test -f scripts/upload_reports_s3.sh
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "VALIDATE"'
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
+
+plan:
+  <<: *setup
+  stage: plan
+  script:
+    - bash scripts/discover_aws_accounts.sh
   artifacts:
     expire_in: 1 day
     paths:
-      - terraform/prowler-app-irsa/tfplan
-  when: manual
+      - output/accounts/accounts.txt
+      - output/accounts/accounts.json
+  dependencies:
+    - validate
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "VALIDATE"'
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
 
-terraform_apply_irsa:
-  stage: infra_apply
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  needs:
-    - terraform_plan_irsa
+apply:
+  <<: *setup
+  stage: apply
   script:
-    - |
-      if [ "$TF_INIT_ARGS" = "-backend=false" ] && [ "$ALLOW_LOCAL_TF_STATE" != "true" ]; then
-        echo "Configure a Terraform backend through TF_INIT_ARGS before apply, or set ALLOW_LOCAL_TF_STATE=true for a disposable test." >&2
-        exit 2
-      fi
-    - terraform -chdir=terraform/prowler-app-irsa init $TF_INIT_ARGS
-    - terraform -chdir=terraform/prowler-app-irsa apply -auto-approve tfplan
-    - terraform -chdir=terraform/prowler-app-irsa output -raw role_arn
-  when: manual
-
-terraform_plan_target_role:
-  stage: infra_plan
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  needs:
-    - terraform_validate
-  script:
-    - |
-      if [ -z "$TF_VAR_trusted_irsa_role_arn" ]; then
-        echo "TF_VAR_trusted_irsa_role_arn is required." >&2
-        exit 2
-      fi
-    - terraform -chdir=terraform/prowler-target-role init $TF_INIT_ARGS
-    - terraform -chdir=terraform/prowler-target-role plan -out=tfplan -var="aws_region=$AWS_REGION"
+    - bash scripts/run_prowler_all_accounts.sh
+    - "$PYTHON_BIN" scripts/consolidate_reports.py
+    - "$PYTHON_BIN" scripts/generate_summary.py
+    - bash scripts/upload_reports_s3.sh
   artifacts:
+    when: always
     expire_in: 1 day
     paths:
-      - terraform/prowler-target-role/tfplan
+      - output/
   when: manual
+  dependencies:
+    - plan
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "IMPLEMENT"'
 
-terraform_apply_target_role:
-  stage: infra_apply
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  needs:
-    - terraform_plan_target_role
+destroy:
+  <<: *setup
+  stage: destroy
   script:
-    - |
-      if [ "$TF_INIT_ARGS" = "-backend=false" ] && [ "$ALLOW_LOCAL_TF_STATE" != "true" ]; then
-        echo "Configure a Terraform backend through TF_INIT_ARGS before apply, or set ALLOW_LOCAL_TF_STATE=true for a disposable test." >&2
-        exit 2
-      fi
-    - terraform -chdir=terraform/prowler-target-role init $TF_INIT_ARGS
-    - terraform -chdir=terraform/prowler-target-role apply -auto-approve tfplan
-    - terraform -chdir=terraform/prowler-target-role output -raw role_arn
+    - echo "Destroy is not supported for this MVP security audit pipeline."
+    - echo "No AWS resources or findings will be deleted by this project."
+    - exit 1
   when: manual
-
-deploy:
-  stage: deploy
-  image:
-    name: alpine/k8s:1.30.2
-    entrypoint: [""]
-  needs:
-    - helm_validate
-  script:
-    - |
-      if [ -z "$KUBE_CONTEXT" ]; then
-        echo "KUBE_CONTEXT is required for deploy." >&2
-        exit 2
-      fi
-      if [ -z "$POSTGRES_HOST" ]; then
-        echo "POSTGRES_HOST is required for deploy." >&2
-        exit 2
-      fi
-      if [ -z "$APP_AUTH_URL" ]; then
-        echo "APP_AUTH_URL is required for deploy." >&2
-        exit 2
-      fi
-      if [ -z "$PROWLER_APP_SECRET_EXISTING_SECRET" ]; then
-        echo "PROWLER_APP_SECRET_EXISTING_SECRET is required for deploy." >&2
-        exit 2
-      fi
-    - kubectl config use-context "$KUBE_CONTEXT"
-    - kubectl create namespace "$KUBE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-    - |
-      IRSA_SET_ARGS=""
-      if [ -n "${PROWLER_APP_IRSA_ROLE_ARN:-}" ]; then
-        IRSA_SET_ARGS="--set serviceAccount.irsaRoleArn=${PROWLER_APP_IRSA_ROLE_ARN}"
-      fi
-
-      helm upgrade --install "$HELM_RELEASE_NAME" helm/prowler-app \
-        --namespace "$KUBE_NAMESPACE" \
-        --set app.authUrl="$APP_AUTH_URL" \
-        --set postgres.host="$POSTGRES_HOST" \
-        --set postgres.existingSecret="$POSTGRES_EXISTING_SECRET" \
-        --set app.secrets.create=false \
-        --set app.secrets.existingSecret="$PROWLER_APP_SECRET_EXISTING_SECRET" \
-        $IRSA_SET_ARGS
-  when: manual
+  rules:
+    - if: '$DEPLOY_ENVIRONMENT == "destroy"'
