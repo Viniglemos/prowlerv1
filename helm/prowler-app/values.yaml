@@ -41,12 +41,12 @@ images:
 
 postgres:
   external: true
-  host: ""
+  host: "toolss-educacional.cgeugefwnixv.us-east-1.rds.amazonaws.com"
   port: 5432
   database: prowler_db
   adminUser: prowler_admin
   appUser: prowler
-  existingSecret: ""
+  existingSecret: "prowler-enviado-pelo-db"
   adminPasswordKey: POSTGRES_ADMIN_PASSWORD
   appPasswordKey: POSTGRES_PASSWORD
 
