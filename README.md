@@ -19,6 +19,8 @@ The current direction is intentionally simple:
 .
 |-- README.md
 |-- .gitlab-ci.yml
+|-- integrations/
+|   `-- n8n/
 |-- terraform/
 |   |-- prowler-app-irsa/
 |   `-- prowler-target-role/
@@ -174,6 +176,8 @@ Prowler App
   -> n8n webhook/workflow
   -> Teams private channel
 ```
+
+The optional workflow template is in `integrations/n8n`. It must be configured with n8n-side environment variables and must not store tokens or webhook URLs in Git.
 
 ## AWS Access Roles
 

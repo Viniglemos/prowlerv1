@@ -78,6 +78,8 @@ terraform_apply_irsa:
     - terraform -chdir=terraform/prowler-app-irsa apply -auto-approve tfplan
     - terraform -chdir=terraform/prowler-app-irsa output -raw role_arn
   when: manual
+  allow_failure: false
+  manual_confirmation: "Apply Terraform changes for the Prowler App IRSA role?"
 
 terraform_plan_target_role:
   stage: infra_plan
@@ -117,8 +119,10 @@ terraform_apply_target_role:
     - terraform -chdir=terraform/prowler-target-role apply -auto-approve tfplan
     - terraform -chdir=terraform/prowler-target-role output -raw role_arn
   when: manual
+  allow_failure: false
+  manual_confirmation: "Apply Terraform changes for target account ProwlerScanRole?"
 
-deploy:
+deploy_app:
   stage: deploy
   image:
     name: alpine/k8s:1.30.2
@@ -143,3 +147,5 @@ deploy:
         --set postgres.existingSecret="$POSTGRES_EXISTING_SECRET" \
         --set app.secrets.create=false
   when: manual
+  allow_failure: false
+  manual_confirmation: "Deploy or upgrade the Prowler App in Kubernetes?"

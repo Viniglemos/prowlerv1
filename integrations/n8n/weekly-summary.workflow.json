@@ -1,0 +1,212 @@
+{
+  "name": "Prowler Weekly Teams Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekly",
+      "name": "Weekly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.PROWLER_API_BASE_URL}}/findings",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filter[status]",
+              "value": "FAIL"
+            },
+            {
+              "name": "filter[severity]",
+              "value": "critical,high"
+            },
+            {
+              "name": "filter[service]",
+              "value": "iam,s3,cloudtrail"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.PROWLER_API_TOKEN}}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "get-prowler-findings",
+      "name": "Get Prowler Findings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json;\nconst rows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];\n\nconst findings = rows.map((item) => {\n  const attrs = item.attributes || item;\n  return {\n    provider: attrs.provider || attrs.provider_uid || attrs.account_id || attrs.account || 'unknown',\n    service: String(attrs.service || attrs.service_name || '').toLowerCase(),\n    severity: String(attrs.severity || '').toLowerCase(),\n    status: String(attrs.status || attrs.state || '').toUpperCase(),\n    check: attrs.check_id || attrs.check || attrs.title || attrs.uid || 'unknown-check',\n    title: attrs.title || attrs.description || attrs.check_id || 'Finding without title',\n    region: attrs.region || attrs.region_name || 'global',\n    resource: attrs.resource_uid || attrs.resource_id || attrs.resource || ''\n  };\n}).filter((finding) => {\n  const allowedServices = ['iam', 's3', 'cloudtrail'];\n  const allowedSeverity = ['critical', 'high'];\n  const failedStatuses = ['FAIL', 'FAILED', 'OPEN'];\n  return allowedServices.includes(finding.service)\n    && allowedSeverity.includes(finding.severity)\n    && failedStatuses.includes(finding.status);\n});\n\nconst bySeverity = findings.reduce((acc, finding) => {\n  acc[finding.severity] = (acc[finding.severity] || 0) + 1;\n  return acc;\n}, {});\n\nconst byService = findings.reduce((acc, finding) => {\n  acc[finding.service] = (acc[finding.service] || 0) + 1;\n  return acc;\n}, {});\n\nconst byProvider = findings.reduce((acc, finding) => {\n  acc[finding.provider] = (acc[finding.provider] || 0) + 1;\n  return acc;\n}, {});\n\nconst topFindings = findings.slice(0, 50);\n\nreturn [{\n  json: {\n    generatedAt: new Date().toISOString(),\n    prowlerUrl: $env.PROWLER_APP_URL || '',\n    totalFindings: findings.length,\n    bySeverity,\n    byService,\n    byProvider,\n    topFindings\n  }\n}];"
+      },
+      "id": "normalize-findings",
+      "name": "Normalize Findings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SUMMARY_AGENT_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.SUMMARY_AGENT_TOKEN}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"language\":\"pt-BR\",\"prompt\":\"Summarize the Prowler weekly findings for Teams. Use the project prompt stored in integrations/n8n/weekly-summary-agent.prompt.md.\",\"input\":$json}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "generate-agent-summary",
+      "name": "Generate Agent Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.TEAMS_WEBHOOK_URL}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": $json.summary || $json.message || $json.output || JSON.stringify($json)}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "send-teams-message",
+      "name": "Send Teams Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Prowler Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Prowler Findings": {
+      "main": [
+        [
+          {
+            "node": "Normalize Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Findings": {
+      "main": [
+        [
+          {
+            "node": "Generate Agent Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Agent Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Teams Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "America/Sao_Paulo"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "local-template",
+  "triggerCount": 0,
+  "tags": [
+    {
+      "name": "prowler"
+    },
+    {
+      "name": "weekly-summary"
+    }
+  ]
+}
+
