@@ -1,0 +1,99 @@
+{{- if .Values.scheduledScaling.enabled }}
+{{- $root := . }}
+{{- $scalerServiceAccount := default (printf "%s-scaler" (include "prowler-app.fullname" .)) .Values.scheduledScaling.serviceAccount.name }}
+{{- if .Values.scheduledScaling.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $scalerServiceAccount }}
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduled-scaler
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-scheduled-scaler
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduled-scaler
+rules:
+  - apiGroups:
+      - apps
+    resources:
+      - deployments/scale
+    resourceNames:
+      - {{ include "prowler-app.fullname" . }}-worker
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-scheduled-scaler
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduled-scaler
+subjects:
+  - kind: ServiceAccount
+    name: {{ $scalerServiceAccount }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "prowler-app.fullname" . }}-scheduled-scaler
+{{- $jobs := dict "scale-up" .Values.scheduledScaling.scaleUp "scale-down" .Values.scheduledScaling.scaleDown }}
+{{- range $jobName, $job := $jobs }}
+{{- if $job.enabled }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "prowler-app.fullname" $root }}-worker-{{ $jobName }}
+  labels:
+    {{- include "prowler-app.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: scheduled-scaler
+spec:
+  schedule: {{ $job.schedule | quote }}
+  timeZone: {{ $root.Values.scheduledScaling.timeZone | quote }}
+  concurrencyPolicy: {{ $root.Values.scheduledScaling.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ $root.Values.scheduledScaling.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $root.Values.scheduledScaling.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $root.Values.scheduledScaling.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "prowler-app.selectorLabels" $root | nindent 12 }}
+            app.kubernetes.io/component: scheduled-scaler
+        spec:
+          serviceAccountName: {{ $scalerServiceAccount }}
+          restartPolicy: Never
+          {{- if $root.Values.imagePullSecrets.enabled }}
+          imagePullSecrets:
+            - name: {{ $root.Values.imagePullSecrets.name | quote }}
+          {{- end }}
+          containers:
+            - name: kubectl
+              image: "{{ $root.Values.images.kubectl.repository }}:{{ $root.Values.images.kubectl.tag }}"
+              imagePullPolicy: {{ $root.Values.images.kubectl.pullPolicy }}
+              command:
+                - kubectl
+                - scale
+                - deployment/{{ include "prowler-app.fullname" $root }}-worker
+                - --namespace
+                - {{ $root.Release.Namespace }}
+                - --replicas={{ $job.workerReplicas }}
+              resources:
+                {{- toYaml $root.Values.scheduledScaling.resources | nindent 16 }}
+          {{- with $root.Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

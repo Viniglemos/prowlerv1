@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-worker
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "prowler-app.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "prowler-app.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: {{ include "prowler-app.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 120
+      {{- if .Values.imagePullSecrets.enabled }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets.name | quote }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "prowler-app.apiImage" . | quote }}
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          command:
+            - /home/prowler/docker-entrypoint.sh
+            - worker
+          envFrom:
+            - configMapRef:
+                name: {{ include "prowler-app.fullname" . }}-config
+            - secretRef:
+                name: {{ include "prowler-app.secretName" . }}
+            - secretRef:
+                name: {{ include "prowler-app.postgresSecretName" . }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: output
+              mountPath: /tmp/prowler_api_output
+      volumes:
+        - name: output
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

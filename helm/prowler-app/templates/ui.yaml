@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-ui
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+spec:
+  replicas: {{ .Values.ui.replicas }}
+  selector:
+    matchLabels:
+      {{- include "prowler-app.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ui
+  template:
+    metadata:
+      labels:
+        {{- include "prowler-app.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ui
+    spec:
+      {{- if .Values.imagePullSecrets.enabled }}
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets.name | quote }}
+      {{- end }}
+      containers:
+        - name: ui
+          image: {{ include "prowler-app.uiImage" . | quote }}
+          imagePullPolicy: {{ .Values.images.ui.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.app.uiPort }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "prowler-app.fullname" . }}-config
+            - secretRef:
+                name: {{ include "prowler-app.secretName" . }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.ui.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-ui
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+spec:
+  type: {{ .Values.service.ui.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.ui.port }}
+      targetPort: http
+  selector:
+    {{- include "prowler-app.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ui

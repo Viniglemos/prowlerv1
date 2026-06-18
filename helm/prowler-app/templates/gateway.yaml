@@ -1,0 +1,58 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "prowler-app.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app: {{ include "prowler-app.fullname" . }}
+spec:
+  parentRefs:
+    - name: {{ required "gateway.parentRef.name is required when gateway.enabled=true" .Values.gateway.parentRef.name | quote }}
+      namespace: {{ required "gateway.parentRef.namespace is required when gateway.enabled=true" .Values.gateway.parentRef.namespace | quote }}
+      {{- with .Values.gateway.parentRef.sectionName }}
+      sectionName: {{ . | quote }}
+      {{- end }}
+  hostnames:
+    - {{ required "gateway.host is required when gateway.enabled=true" .Values.gateway.host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.gateway.pathPrefix | quote }}
+      backendRefs:
+        - name: {{ include "prowler-app.fullname" . }}-ui
+          port: {{ .Values.service.ui.port }}
+          weight: 1
+{{- if .Values.gateway.redirect.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-redirect
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app: {{ include "prowler-app.fullname" . }}
+spec:
+  parentRefs:
+    - name: {{ required "gateway.redirect.parentRef.name is required when gateway.redirect.enabled=true" .Values.gateway.redirect.parentRef.name | quote }}
+      namespace: {{ required "gateway.redirect.parentRef.namespace is required when gateway.redirect.enabled=true" .Values.gateway.redirect.parentRef.namespace | quote }}
+      {{- with .Values.gateway.redirect.parentRef.sectionName }}
+      sectionName: {{ . | quote }}
+      {{- end }}
+  hostnames:
+    - {{ required "gateway.host is required when gateway.enabled=true" .Values.gateway.host | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.gateway.pathPrefix | quote }}
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+{{- end }}
+{{- end }}
