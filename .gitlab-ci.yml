@@ -127,7 +127,7 @@ deploy:
     - helm_validate
   script:
     - |
-      KUBE_CONTEXT="${KUBE_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
+      AGENT_CONTEXT="${AGENT_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
       HELM_RELEASE_NAME="${HELM_RELEASE_NAME:-prowler-app}"
       KUBE_NAMESPACE="${KUBE_NAMESPACE:-security-audit}"
 
@@ -136,7 +136,7 @@ deploy:
         exit 2
       fi
 
-      kubectl config use-context "$KUBE_CONTEXT"
+      kubectl config use-context "$AGENT_CONTEXT"
       kubectl create namespace "$KUBE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
       helm upgrade --install "$HELM_RELEASE_NAME" helm/prowler-app \
         --namespace "$KUBE_NAMESPACE" \

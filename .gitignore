@@ -5,6 +5,7 @@
 
 # Internal documentation and local agent materials
 AGENTS.md
+agent_context.md
 docs/
 skills/
 .agents/
