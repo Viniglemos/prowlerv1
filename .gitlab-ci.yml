@@ -1,3 +1,18 @@
+spec:
+  inputs:
+    pipeline_mode:
+      description: "Pipeline section to run"
+      default: "validate"
+      options:
+        - "validate"
+        - "irsa"
+        - "target"
+        - "maintenance"
+        - "deploy"
+        - "all"
+
+---
+
 workflow:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
@@ -5,7 +20,7 @@ workflow:
     - when: never
 
 variables:
-  PIPELINE_MODE: "validate"
+  PIPELINE_MODE: "$[[ inputs.pipeline_mode ]]"
   POSTGRES_EXISTING_SECRET: "prowler-postgres-secret"
   PROWLER_APP_EXISTING_SECRET: "prowler-app-secret"
 
