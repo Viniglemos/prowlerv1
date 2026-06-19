@@ -56,12 +56,35 @@ terraform_validate:
   rules:
     - if: '$PIPELINE_MODE =~ /^(validate|irsa|target|target_all|all)$/'
   script:
-    - terraform -chdir=terraform/prowler-app-irsa fmt -check
-    - terraform -chdir=terraform/prowler-target-role fmt -check
-    - terraform -chdir=terraform/prowler-app-irsa init -backend=false
-    - terraform -chdir=terraform/prowler-app-irsa validate
-    - terraform -chdir=terraform/prowler-target-role init -backend=false
-    - terraform -chdir=terraform/prowler-target-role validate
+    - |
+      validate_irsa() {
+        terraform -chdir=terraform/prowler-app-irsa fmt -check
+        terraform -chdir=terraform/prowler-app-irsa init -backend=false
+        terraform -chdir=terraform/prowler-app-irsa validate
+      }
+
+      validate_target() {
+        terraform -chdir=terraform/prowler-target-role fmt -check
+        terraform -chdir=terraform/prowler-target-role init -backend=false
+        terraform -chdir=terraform/prowler-target-role validate
+      }
+
+      case "$PIPELINE_MODE" in
+        validate|all)
+          validate_irsa
+          validate_target
+          ;;
+        irsa)
+          validate_irsa
+          ;;
+        target|target_all)
+          validate_target
+          ;;
+        *)
+          echo "Unsupported PIPELINE_MODE: $PIPELINE_MODE" >&2
+          exit 2
+          ;;
+      esac
 
 terraform_plan_irsa:
   stage: infra_plan
