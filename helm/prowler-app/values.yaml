@@ -41,12 +41,12 @@ images:
 
 postgres:
   external: true
-  host: "toolss-educacional.cgeugefwnixv.us-east-1.rds.amazonaws.com"
+  host: ""
   port: 5432
   database: prowler_db
   adminUser: prowler_admin
   appUser: prowler
-  existingSecret: "prowler-enviado-pelo-db"
+  existingSecret: ""
   adminPasswordKey: POSTGRES_ADMIN_PASSWORD
   appPasswordKey: POSTGRES_PASSWORD
 
@@ -134,11 +134,11 @@ scheduledScaling:
     create: true
     name: ""
   scaleUp:
-    enabled: true
+    enabled: false
     schedule: "30 23 * * *"
     workerReplicas: 2
   scaleDown:
-    enabled: true
+    enabled: false
     schedule: "0 7 * * *"
     workerReplicas: 1
   concurrencyPolicy: Forbid
@@ -194,7 +194,7 @@ gateway:
   parentRef:
     name: "gateway-privado"
     namespace: "nginx-gateway-private"
-    sectionName: "https-educacional-com"
+    sectionName: "https-educacional-app"
   redirect:
     enabled: true
     parentRef:

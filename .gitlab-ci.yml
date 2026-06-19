@@ -6,11 +6,13 @@ workflow:
 
 variables:
   POSTGRES_EXISTING_SECRET: "prowler-postgres-secret"
+  PROWLER_APP_EXISTING_SECRET: "prowler-app-secret"
 
 stages:
   - validate
   - infra_plan
   - infra_apply
+  - maintenance
   - deploy
 
 helm_validate:
@@ -53,7 +55,7 @@ terraform_plan_irsa:
         echo "TF_VAR_oidc_provider_arn and TF_VAR_oidc_provider_url are required." >&2
         exit 2
       fi
-    - terraform -chdir=terraform/prowler-app-irsa init ${TF_INIT_ARGS:--backend=false}
+    - terraform -chdir=terraform/prowler-app-irsa init ${TF_INIT_ARGS:-}
     - terraform -chdir=terraform/prowler-app-irsa plan -out=tfplan -var="aws_region=${AWS_REGION:-us-east-1}"
   artifacts:
     expire_in: 1 day
@@ -69,12 +71,7 @@ terraform_apply_irsa:
   needs:
     - terraform_plan_irsa
   script:
-    - |
-      if [ "${TF_INIT_ARGS:--backend=false}" = "-backend=false" ] && [ "${ALLOW_LOCAL_TF_STATE:-false}" != "true" ]; then
-        echo "Configure a Terraform backend through TF_INIT_ARGS before apply, or set ALLOW_LOCAL_TF_STATE=true for a disposable test." >&2
-        exit 2
-      fi
-    - terraform -chdir=terraform/prowler-app-irsa init ${TF_INIT_ARGS:--backend=false}
+    - terraform -chdir=terraform/prowler-app-irsa init ${TF_INIT_ARGS:-}
     - terraform -chdir=terraform/prowler-app-irsa apply -auto-approve tfplan
     - terraform -chdir=terraform/prowler-app-irsa output -raw role_arn
   when: manual
@@ -90,12 +87,12 @@ terraform_plan_target_role:
     - terraform_validate
   script:
     - |
-      if [ -z "$TF_VAR_trusted_irsa_role_arn" ]; then
-        echo "TF_VAR_trusted_irsa_role_arn is required." >&2
+      if [ -z "$TARGET_ACCOUNT_ID" ] || [ -z "$TF_VAR_trusted_irsa_role_arn" ]; then
+        echo "TARGET_ACCOUNT_ID and TF_VAR_trusted_irsa_role_arn are required." >&2
         exit 2
       fi
-    - terraform -chdir=terraform/prowler-target-role init ${TF_INIT_ARGS:--backend=false}
-    - terraform -chdir=terraform/prowler-target-role plan -out=tfplan -var="aws_region=${AWS_REGION:-us-east-1}"
+    - terraform -chdir=terraform/prowler-target-role init -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
+    - terraform -chdir=terraform/prowler-target-role plan -out=tfplan -var="aws_region=${AWS_REGION:-us-east-1}" -var="target_account_id=${TARGET_ACCOUNT_ID}"
   artifacts:
     expire_in: 1 day
     paths:
@@ -111,16 +108,79 @@ terraform_apply_target_role:
     - terraform_plan_target_role
   script:
     - |
-      if [ "${TF_INIT_ARGS:--backend=false}" = "-backend=false" ] && [ "${ALLOW_LOCAL_TF_STATE:-false}" != "true" ]; then
-        echo "Configure a Terraform backend through TF_INIT_ARGS before apply, or set ALLOW_LOCAL_TF_STATE=true for a disposable test." >&2
+      if [ -z "$TARGET_ACCOUNT_ID" ]; then
+        echo "TARGET_ACCOUNT_ID is required." >&2
         exit 2
       fi
-    - terraform -chdir=terraform/prowler-target-role init ${TF_INIT_ARGS:--backend=false}
+    - terraform -chdir=terraform/prowler-target-role init -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
     - terraform -chdir=terraform/prowler-target-role apply -auto-approve tfplan
     - terraform -chdir=terraform/prowler-target-role output -raw role_arn
   when: manual
   allow_failure: false
   manual_confirmation: "Apply Terraform changes for target account ProwlerScanRole?"
+
+update_postgres_secret:
+  stage: maintenance
+  image:
+    name: alpine/k8s:1.30.2
+    entrypoint: [""]
+  script:
+    - |
+      AGENT_CONTEXT="${AGENT_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
+      KUBE_NAMESPACE="${KUBE_NAMESPACE:-security-audit}"
+
+      if [ -z "$POSTGRES_EXISTING_SECRET" ]; then
+        echo "POSTGRES_EXISTING_SECRET is required." >&2
+        exit 2
+      fi
+
+      if [ -z "$POSTGRES_ADMIN_PASSWORD" ] || [ -z "$POSTGRES_PASSWORD" ]; then
+        echo "POSTGRES_ADMIN_PASSWORD and POSTGRES_PASSWORD are required as masked GitLab variables." >&2
+        exit 2
+      fi
+
+      kubectl config use-context "$AGENT_CONTEXT"
+      kubectl create namespace "$KUBE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create secret generic "$POSTGRES_EXISTING_SECRET" \
+        --namespace "$KUBE_NAMESPACE" \
+        --from-literal=POSTGRES_ADMIN_PASSWORD="$POSTGRES_ADMIN_PASSWORD" \
+        --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+        --dry-run=client \
+        -o yaml | kubectl apply -f -
+  when: manual
+  allow_failure: false
+  manual_confirmation: "Create or update the Kubernetes Secret that stores the Postgres passwords?"
+
+update_prowler_app_secret:
+  stage: maintenance
+  image:
+    name: alpine/k8s:1.30.2
+    entrypoint: [""]
+  script:
+    - |
+      AGENT_CONTEXT="${AGENT_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
+      KUBE_NAMESPACE="${KUBE_NAMESPACE:-security-audit}"
+      PROWLER_APP_EXISTING_SECRET="${PROWLER_APP_EXISTING_SECRET:-prowler-app-secret}"
+
+      if [ -z "$AUTH_SECRET" ] || [ -z "$DJANGO_TOKEN_SIGNING_KEY" ] || [ -z "$DJANGO_TOKEN_VERIFYING_KEY" ] || [ -z "$DJANGO_SECRETS_ENCRYPTION_KEY" ] || [ -z "$VALKEY_PASSWORD" ]; then
+        echo "AUTH_SECRET, DJANGO_TOKEN_SIGNING_KEY, DJANGO_TOKEN_VERIFYING_KEY, DJANGO_SECRETS_ENCRYPTION_KEY and VALKEY_PASSWORD are required as masked GitLab variables." >&2
+        exit 2
+      fi
+
+      kubectl config use-context "$AGENT_CONTEXT"
+      kubectl create namespace "$KUBE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+      kubectl create secret generic "$PROWLER_APP_EXISTING_SECRET" \
+        --namespace "$KUBE_NAMESPACE" \
+        --from-literal=AUTH_SECRET="$AUTH_SECRET" \
+        --from-literal=DJANGO_TOKEN_SIGNING_KEY="$DJANGO_TOKEN_SIGNING_KEY" \
+        --from-literal=DJANGO_TOKEN_VERIFYING_KEY="$DJANGO_TOKEN_VERIFYING_KEY" \
+        --from-literal=DJANGO_SECRETS_ENCRYPTION_KEY="$DJANGO_SECRETS_ENCRYPTION_KEY" \
+        --from-literal=VALKEY_PASSWORD="$VALKEY_PASSWORD" \
+        --dry-run=client \
+        -o yaml | kubectl apply -f -
+  when: manual
+  allow_failure: false
+  manual_confirmation: "Create or update the Kubernetes Secret that stores the Prowler App internal secrets?"
 
 deploy_app:
   stage: deploy
@@ -134,9 +194,23 @@ deploy_app:
       AGENT_CONTEXT="${AGENT_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
       HELM_RELEASE_NAME="${HELM_RELEASE_NAME:-prowler-app}"
       KUBE_NAMESPACE="${KUBE_NAMESPACE:-security-audit}"
+      PROWLER_APP_AUTH_URL="${PROWLER_APP_AUTH_URL:-https://prowler.educacional.app}"
+      PROWLER_APP_GATEWAY_HOST="${PROWLER_APP_GATEWAY_HOST:-prowler.educacional.app}"
+      PROWLER_APP_GATEWAY_ENABLED="${PROWLER_APP_GATEWAY_ENABLED:-true}"
+      POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
       if [ -z "$POSTGRES_EXISTING_SECRET" ]; then
         echo "POSTGRES_EXISTING_SECRET is required for deploy." >&2
+        exit 2
+      fi
+
+      if [ -z "$POSTGRES_HOST" ] || [ -z "$POSTGRES_DATABASE" ] || [ -z "$POSTGRES_USER" ]; then
+        echo "POSTGRES_HOST, POSTGRES_DATABASE and POSTGRES_USER are required for deploy." >&2
+        exit 2
+      fi
+
+      if [ -z "$PROWLER_APP_IRSA_ROLE_ARN" ]; then
+        echo "PROWLER_APP_IRSA_ROLE_ARN is required for deploy." >&2
         exit 2
       fi
 
@@ -144,7 +218,16 @@ deploy_app:
       kubectl create namespace "$KUBE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
       helm upgrade --install "$HELM_RELEASE_NAME" helm/prowler-app \
         --namespace "$KUBE_NAMESPACE" \
+        --set app.authUrl="$PROWLER_APP_AUTH_URL" \
+        --set postgres.host="$POSTGRES_HOST" \
+        --set postgres.port="$POSTGRES_PORT" \
+        --set postgres.database="$POSTGRES_DATABASE" \
+        --set postgres.adminUser="$POSTGRES_USER" \
+        --set postgres.appUser="$POSTGRES_USER" \
         --set postgres.existingSecret="$POSTGRES_EXISTING_SECRET" \
+        --set serviceAccount.irsaRoleArn="$PROWLER_APP_IRSA_ROLE_ARN" \
+        --set gateway.enabled="$PROWLER_APP_GATEWAY_ENABLED" \
+        --set gateway.host="$PROWLER_APP_GATEWAY_HOST" \
         --set app.secrets.create=false
   when: manual
   allow_failure: false

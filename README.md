@@ -193,17 +193,19 @@ Prowler App pod
   -> ProwlerScanRole in each target AWS account
 ```
 
-This repository includes Terraform for the two IAM layers:
+This repository includes Terraform for the Prowler-specific IAM layers:
 
 - `terraform/prowler-app-irsa`: creates the IRSA role used by the Kubernetes ServiceAccount.
 - `terraform/prowler-target-role`: creates the target account role assumed by the IRSA role.
 
-The target role uses a custom read-only policy limited to the V1 scope:
+The corporate Terraform deployment role used by the management account to operate in member accounts is an external platform prerequisite. It is intentionally not managed by this repository because it will be shared by other Terraform applications.
 
-- IAM
-- S3
-- CloudTrail
-- STS caller identity
+The target role attaches AWS managed audit/read-only policies to support V1 and the planned V2 expansion:
+
+- `ReadOnlyAccess`
+- `SecurityAudit`
+
+The initial Prowler App scan configuration remains limited to AWS IAM, S3 and CloudTrail. Broader permissions are intentionally available so the team can expand coverage after V1 without replacing the cross-account role model.
 
 Do not create AWS access keys for the Prowler App. Use IRSA and assume-role only.
 
@@ -217,22 +219,45 @@ This helps with longer scans. It does not bypass AWS role chaining limits, so th
 
 ### Creation Order
 
-1. Create the IRSA role in the EKS account.
-2. Create `ProwlerScanRole` in each target account, trusting the IRSA role ARN.
-3. Deploy the Helm chart with the IRSA annotation:
+1. Ensure the external corporate Terraform deployment role exists in the target accounts.
+2. Create the IRSA role in the EKS/tools account.
+3. Create `ProwlerScanRole` in each target account, trusting the IRSA role ARN.
+4. Deploy the Helm chart with the IRSA annotation:
 
 ```yaml
 serviceAccount:
   irsaRoleArn: "<prowler-app-irsa-role-arn>"
 ```
 
-4. Configure AWS providers in the Prowler App using the target role ARNs:
+5. Configure AWS providers in the Prowler App using the target role ARNs:
 
 ```text
 arn:aws:iam::<target-account-id>:role/ProwlerScanRole
 ```
 
 The optional `external_id` variable can be enabled for the target role trust policy if required by the Prowler App provider configuration.
+
+### Discover AWS Account IDs
+
+Use the helper below from an authenticated AWS Organizations management/delegated-admin context:
+
+```bash
+bash tools/discover-aws-account-ids.sh
+```
+
+It generates local files under `generated/aws-organizations/`:
+
+```text
+accounts.json
+accounts.txt
+target-account-ids.auto.tfvars.example
+```
+
+`generated/` is ignored by Git. Do not commit account exports unless explicitly approved.
+
+The helper only discovers account IDs for inventory and manual provider registration. `TF_VAR_target_account_ids` is optional. When it is not set, the IRSA policy allows assuming `ProwlerScanRole` with the same role name in any AWS account, which matches the current requirement to onboard all accounts without exception.
+
+The `terraform/prowler-target-role` module uses the current management-account credentials as the base identity and assumes `OrgTerraformDeploymentRole` in the target account defined by `TARGET_ACCOUNT_ID`. Run the target role jobs once per account, or automate the same flow later with an approved loop/orchestrator.
 
 The summary should include:
 
@@ -280,29 +305,75 @@ terraform -chdir=terraform/prowler-target-role validate
 
 The pipeline is intentionally not triggered by push or merge request events. Use **Run pipeline** or a controlled schedule.
 
-Only this variable should be persisted in GitLab CI/CD variables for the Helm deploy:
+Variables for Kubernetes access and Helm deploy:
 
 ```text
+AGENT_CONTEXT
+KUBE_NAMESPACE
+POSTGRES_HOST
+POSTGRES_PORT
+POSTGRES_DATABASE
+POSTGRES_USER
 POSTGRES_EXISTING_SECRET
+PROWLER_APP_EXISTING_SECRET
+PROWLER_APP_IRSA_ROLE_ARN
+PROWLER_APP_AUTH_URL
+PROWLER_APP_GATEWAY_ENABLED
+PROWLER_APP_GATEWAY_HOST
 ```
 
-Other environment-specific values should be kept in Helm values, Terraform inputs, or provided only at pipeline execution time when needed.
+Variables for the manual `update_postgres_secret` maintenance job:
+
+```text
+POSTGRES_ADMIN_PASSWORD
+POSTGRES_PASSWORD
+```
+
+Configure `POSTGRES_ADMIN_PASSWORD` and `POSTGRES_PASSWORD` as masked/protected GitLab variables. The job creates or updates the Kubernetes Secret named by `POSTGRES_EXISTING_SECRET`.
+
+Variables for the manual `update_prowler_app_secret` maintenance job:
+
+```text
+AUTH_SECRET
+DJANGO_TOKEN_SIGNING_KEY
+DJANGO_TOKEN_VERIFYING_KEY
+DJANGO_SECRETS_ENCRYPTION_KEY
+VALKEY_PASSWORD
+```
+
+Configure these variables as masked/protected GitLab variables. The job creates or updates the Kubernetes Secret named by `PROWLER_APP_EXISTING_SECRET`.
+
+Do not put Postgres passwords in Helm values or committed files. Other environment-specific values should be kept in Helm values, Terraform inputs, or provided only at pipeline execution time when needed.
 
 Terraform variables for manual plan/apply jobs:
 
 ```text
 AWS_REGION
 TF_INIT_ARGS
-ALLOW_LOCAL_TF_STATE
 TF_VAR_oidc_provider_arn
 TF_VAR_oidc_provider_url
-TF_VAR_target_account_ids
 TF_VAR_trusted_irsa_role_arn
+TARGET_ACCOUNT_ID
+TF_VAR_terraform_deployment_role_name
 TF_VAR_external_id
 TF_VAR_max_session_duration
 ```
 
-`TF_INIT_ARGS` defaults to `-backend=false` for validation. For real applies, configure the company-approved Terraform backend in GitLab before running manual apply jobs. The apply jobs block local state by default; use `ALLOW_LOCAL_TF_STATE=true` only for disposable tests.
+Terraform state uses the company S3 backend configured in each module:
+
+```text
+bucket: state-tools
+region: us-east-1
+```
+
+State keys:
+
+```text
+terraform/prowler-app-irsa: prowler-app-irsa.tfstate
+terraform/prowler-target-role: prowler-target-role/<TARGET_ACCOUNT_ID>.tfstate
+```
+
+`TF_INIT_ARGS` is optional and should only be used for company-approved extra `terraform init` arguments.
 
 ## Security Notes
 

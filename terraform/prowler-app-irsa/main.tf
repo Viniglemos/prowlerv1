@@ -42,6 +42,7 @@ data "aws_iam_policy_document" "trust" {
 
 resource "aws_iam_role" "this" {
   name                 = var.role_name
+  description          = "Role IRSA usada pelo ServiceAccount do Prowler App no EKS da conta tools para assumir ProwlerScanRole nas contas alvo."
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = var.max_session_duration
   tags                 = var.tags
@@ -62,7 +63,7 @@ data "aws_iam_policy_document" "assume_target_roles" {
 
 resource "aws_iam_policy" "assume_target_roles" {
   name        = "${var.role_name}-assume-target-roles"
-  description = "Allows the Prowler App IRSA role to assume target account scan roles."
+  description = "Permite que a role IRSA do Prowler App assuma as roles ProwlerScanRole nas contas AWS alvo."
   policy      = data.aws_iam_policy_document.assume_target_roles.json
   tags        = var.tags
 }

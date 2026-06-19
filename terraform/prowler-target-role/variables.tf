@@ -10,6 +10,22 @@ variable "role_name" {
   default     = "ProwlerScanRole"
 }
 
+variable "target_account_id" {
+  description = "ID da conta AWS alvo onde a ProwlerScanRole sera criada."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.target_account_id))
+    error_message = "target_account_id deve conter exatamente 12 digitos."
+  }
+}
+
+variable "terraform_deployment_role_name" {
+  description = "Nome da role corporativa assumida pela pipeline Terraform na conta alvo."
+  type        = string
+  default     = "OrgTerraformDeploymentRole"
+}
+
 variable "trusted_irsa_role_arn" {
   description = "IRSA role ARN from the EKS account that is allowed to assume this target role."
   type        = string

@@ -20,6 +20,7 @@ config/aws*
 output/
 reports/
 prowler-output/
+generated/
 *.jsonl
 *.csv
 *.html
