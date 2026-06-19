@@ -311,6 +311,7 @@ Use `PIPELINE_MODE` to choose which part of the pipeline appears/runs:
 validate     Helm and Terraform validation only
 irsa         IRSA Terraform plan/apply jobs
 target       ProwlerScanRole Terraform plan/apply jobs
+target_all   Apply ProwlerScanRole to all active AWS Organizations accounts
 maintenance  Kubernetes Secret maintenance jobs
 deploy       Helm deploy job
 all          Show all jobs
@@ -376,6 +377,10 @@ TF_VAR_terraform_deployment_role_name
 TF_VAR_external_id
 TF_VAR_max_session_duration
 ```
+
+For `PIPELINE_MODE=target`, provide `TARGET_ACCOUNT_ID` and run one account at a time.
+
+For `PIPELINE_MODE=target_all`, the pipeline discovers active accounts through AWS Organizations and applies `ProwlerScanRole` to every active account by assuming `OrgTerraformDeploymentRole`. There is no exclusion list because every active account must be scanned.
 
 Terraform state uses the company S3 backend configured in each module:
 
