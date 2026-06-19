@@ -14,13 +14,13 @@ data "aws_iam_policy_document" "trust" {
     }
 
     dynamic "condition" {
-      for_each = var.external_id == "" ? {} : { external_id = var.external_id }
+      for_each = var.external_id == "" ? [] : [{ value = var.external_id }]
 
       content {
         test     = "StringEquals"
         variable = "sts:ExternalId"
         values = [
-          condition.value,
+          condition.value.value,
         ]
       }
     }
