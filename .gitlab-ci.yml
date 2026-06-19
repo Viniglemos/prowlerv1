@@ -5,6 +5,7 @@ workflow:
     - when: never
 
 variables:
+  PIPELINE_MODE: "validate"
   POSTGRES_EXISTING_SECRET: "prowler-postgres-secret"
   PROWLER_APP_EXISTING_SECRET: "prowler-app-secret"
 
@@ -20,6 +21,8 @@ helm_validate:
   image:
     name: alpine/helm:3.15.4
     entrypoint: [""]
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(validate|deploy|all)$/'
   script:
     - helm lint helm/prowler-app
     - |
@@ -34,6 +37,8 @@ terraform_validate:
   image:
     name: hashicorp/terraform:1.9.8
     entrypoint: [""]
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(validate|irsa|target|all)$/'
   script:
     - terraform -chdir=terraform/prowler-app-irsa fmt -check
     - terraform -chdir=terraform/prowler-target-role fmt -check
@@ -49,6 +54,9 @@ terraform_plan_irsa:
     entrypoint: [""]
   needs:
     - terraform_validate
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(irsa|all)$/'
+      when: manual
   script:
     - |
       if [ -z "$TF_VAR_oidc_provider_arn" ] || [ -z "$TF_VAR_oidc_provider_url" ]; then
@@ -61,7 +69,6 @@ terraform_plan_irsa:
     expire_in: 1 day
     paths:
       - terraform/prowler-app-irsa/tfplan
-  when: manual
 
 terraform_apply_irsa:
   stage: infra_apply
@@ -70,11 +77,13 @@ terraform_apply_irsa:
     entrypoint: [""]
   needs:
     - terraform_plan_irsa
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(irsa|all)$/'
+      when: manual
   script:
     - terraform -chdir=terraform/prowler-app-irsa init ${TF_INIT_ARGS:-}
     - terraform -chdir=terraform/prowler-app-irsa apply -auto-approve tfplan
     - terraform -chdir=terraform/prowler-app-irsa output -raw role_arn
-  when: manual
   allow_failure: false
   manual_confirmation: "Apply Terraform changes for the Prowler App IRSA role?"
 
@@ -85,6 +94,9 @@ terraform_plan_target_role:
     entrypoint: [""]
   needs:
     - terraform_validate
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(target|all)$/'
+      when: manual
   script:
     - |
       if [ -z "$TARGET_ACCOUNT_ID" ] || [ -z "$TF_VAR_trusted_irsa_role_arn" ]; then
@@ -97,7 +109,6 @@ terraform_plan_target_role:
     expire_in: 1 day
     paths:
       - terraform/prowler-target-role/tfplan
-  when: manual
 
 terraform_apply_target_role:
   stage: infra_apply
@@ -106,6 +117,9 @@ terraform_apply_target_role:
     entrypoint: [""]
   needs:
     - terraform_plan_target_role
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(target|all)$/'
+      when: manual
   script:
     - |
       if [ -z "$TARGET_ACCOUNT_ID" ]; then
@@ -115,7 +129,6 @@ terraform_apply_target_role:
     - terraform -chdir=terraform/prowler-target-role init -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
     - terraform -chdir=terraform/prowler-target-role apply -auto-approve tfplan
     - terraform -chdir=terraform/prowler-target-role output -raw role_arn
-  when: manual
   allow_failure: false
   manual_confirmation: "Apply Terraform changes for target account ProwlerScanRole?"
 
@@ -124,6 +137,9 @@ update_postgres_secret:
   image:
     name: alpine/k8s:1.30.2
     entrypoint: [""]
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(maintenance|all)$/'
+      when: manual
   script:
     - |
       AGENT_CONTEXT="${AGENT_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
@@ -147,7 +163,6 @@ update_postgres_secret:
         --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
         --dry-run=client \
         -o yaml | kubectl apply -f -
-  when: manual
   allow_failure: false
   manual_confirmation: "Create or update the Kubernetes Secret that stores the Postgres passwords?"
 
@@ -156,6 +171,9 @@ update_prowler_app_secret:
   image:
     name: alpine/k8s:1.30.2
     entrypoint: [""]
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(maintenance|all)$/'
+      when: manual
   script:
     - |
       AGENT_CONTEXT="${AGENT_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
@@ -178,7 +196,6 @@ update_prowler_app_secret:
         --from-literal=VALKEY_PASSWORD="$VALKEY_PASSWORD" \
         --dry-run=client \
         -o yaml | kubectl apply -f -
-  when: manual
   allow_failure: false
   manual_confirmation: "Create or update the Kubernetes Secret that stores the Prowler App internal secrets?"
 
@@ -189,6 +206,9 @@ deploy_app:
     entrypoint: [""]
   needs:
     - helm_validate
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(deploy|all)$/'
+      when: manual
   script:
     - |
       AGENT_CONTEXT="${AGENT_CONTEXT:-positivote/iac/tools/cluster-management/gitlab-agents:tools-educacional-agent}"
@@ -229,6 +249,5 @@ deploy_app:
         --set gateway.enabled="$PROWLER_APP_GATEWAY_ENABLED" \
         --set gateway.host="$PROWLER_APP_GATEWAY_HOST" \
         --set app.secrets.create=false
-  when: manual
   allow_failure: false
   manual_confirmation: "Deploy or upgrade the Prowler App in Kubernetes?"

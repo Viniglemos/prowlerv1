@@ -305,9 +305,27 @@ terraform -chdir=terraform/prowler-target-role validate
 
 The pipeline is intentionally not triggered by push or merge request events. Use **Run pipeline** or a controlled schedule.
 
+Use `PIPELINE_MODE` to choose which part of the pipeline appears/runs:
+
+```text
+validate     Helm and Terraform validation only
+irsa         IRSA Terraform plan/apply jobs
+target       ProwlerScanRole Terraform plan/apply jobs
+maintenance  Kubernetes Secret maintenance jobs
+deploy       Helm deploy job
+all          Show all jobs
+```
+
+Default:
+
+```text
+PIPELINE_MODE=validate
+```
+
 Variables for Kubernetes access and Helm deploy:
 
 ```text
+PIPELINE_MODE
 AGENT_CONTEXT
 KUBE_NAMESPACE
 POSTGRES_HOST
