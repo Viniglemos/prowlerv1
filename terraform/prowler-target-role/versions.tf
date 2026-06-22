@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket  = "state-tools"
+    bucket  = "state-management"
     key     = "prowler-target-role/default.tfstate"
     encrypt = true
     region  = "us-east-1"

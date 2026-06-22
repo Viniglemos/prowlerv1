@@ -5,6 +5,7 @@ spec:
       default: "validate"
       options:
         - "validate"
+        - "create_management_state_bucket"
         - "irsa"
         - "target"
         - "target_all"
@@ -39,6 +40,9 @@ variables:
   TARGET_ACCOUNT_ID:
     value: ""
     description: "Target AWS account ID for pipeline_mode=target. Not used by target_all."
+  MANAGEMENT_STATE_BUCKET:
+    value: "state-management"
+    description: "S3 bucket name for management account Terraform state. Used by pipeline_mode=create_management_state_bucket."
 
 stages:
   - validate
@@ -69,7 +73,7 @@ terraform_validate:
     name: hashicorp/terraform:1.9.8
     entrypoint: [""]
   rules:
-    - if: '$PIPELINE_MODE =~ /^(validate|irsa|target|target_all|all)$/'
+    - if: '$PIPELINE_MODE =~ /^(validate|create_management_state_bucket|irsa|target|target_all|all)$/'
   script:
     - |
       validate_irsa() {
@@ -84,10 +88,20 @@ terraform_validate:
         terraform -chdir=terraform/prowler-target-role validate
       }
 
+      validate_management_state() {
+        terraform -chdir=terraform/management-state-bucket fmt -check
+        terraform -chdir=terraform/management-state-bucket init -backend=false
+        terraform -chdir=terraform/management-state-bucket validate
+      }
+
       case "$PIPELINE_MODE" in
         validate|all)
+          validate_management_state
           validate_irsa
           validate_target
+          ;;
+        create_management_state_bucket)
+          validate_management_state
           ;;
         irsa)
           validate_irsa
@@ -100,6 +114,28 @@ terraform_validate:
           exit 2
           ;;
       esac
+
+create_management_state_bucket:
+  stage: infra_apply
+  image:
+    name: hashicorp/terraform:1.9.8
+    entrypoint: [""]
+  needs:
+    - terraform_validate
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(create_management_state_bucket|all)$/'
+      when: manual
+  script:
+    - terraform -chdir=terraform/management-state-bucket init -backend=false
+    - terraform -chdir=terraform/management-state-bucket apply -auto-approve -var="aws_region=${AWS_REGION:-us-east-1}" -var="bucket_name=${MANAGEMENT_STATE_BUCKET}"
+    - terraform -chdir=terraform/management-state-bucket output -raw bucket_name
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - terraform/management-state-bucket/terraform.tfstate
+  allow_failure: false
+  manual_confirmation: "Create the S3 backend bucket for management Terraform state?"
 
 terraform_plan_irsa:
   stage: infra_plan

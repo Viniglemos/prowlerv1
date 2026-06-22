@@ -309,6 +309,7 @@ Use `PIPELINE_MODE` to choose which part of the pipeline appears/runs:
 
 ```text
 validate     Helm and Terraform validation only
+create_management_state_bucket Create the management S3 backend bucket once
 irsa         IRSA Terraform plan/apply jobs
 target       ProwlerScanRole Terraform plan/apply jobs
 target_all   Apply ProwlerScanRole to all active AWS Organizations accounts
@@ -373,6 +374,7 @@ TF_VAR_oidc_provider_arn
 TF_VAR_oidc_provider_url
 TF_VAR_trusted_irsa_role_arn
 TARGET_ACCOUNT_ID
+MANAGEMENT_STATE_BUCKET
 TF_VAR_terraform_deployment_role_name
 TF_VAR_external_id
 TF_VAR_max_session_duration
@@ -382,11 +384,18 @@ For `PIPELINE_MODE=target`, provide `TARGET_ACCOUNT_ID` and run one account at a
 
 For `PIPELINE_MODE=target_all`, the pipeline discovers active accounts through AWS Organizations and applies `ProwlerScanRole` to every active account by assuming `OrgTerraformDeploymentRole`. There is no exclusion list because every active account must be scanned.
 
-Terraform state uses the company S3 backend configured in each module:
+Run `PIPELINE_MODE=create_management_state_bucket` once with management account credentials if the management backend bucket does not exist yet. It creates the bucket defined by `MANAGEMENT_STATE_BUCKET`, defaulting to `state-management`. This job uses local Terraform state temporarily because a Terraform backend bucket must exist before it can be used as a backend.
+
+Terraform state uses the company S3 backends configured in each module:
 
 ```text
-bucket: state-tools
-region: us-east-1
+terraform/prowler-app-irsa:
+  bucket: state-tools
+  region: us-east-1
+
+terraform/prowler-target-role:
+  bucket: state-management
+  region: us-east-1
 ```
 
 State keys:
