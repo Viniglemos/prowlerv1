@@ -24,6 +24,21 @@ variables:
   PIPELINE_MODE: "$[[ inputs.pipeline_mode ]]"
   POSTGRES_EXISTING_SECRET: "prowler-postgres-secret"
   PROWLER_APP_EXISTING_SECRET: "prowler-app-secret"
+  AWS_ACCESS_KEY_ID:
+    value: ""
+    description: "Temporary AWS access key for the management account. Used from pipeline_mode=target or target_all onward."
+  AWS_SECRET_ACCESS_KEY:
+    value: ""
+    description: "Temporary AWS secret access key for the management account. Used from pipeline_mode=target or target_all onward."
+  AWS_SESSION_TOKEN:
+    value: ""
+    description: "Temporary AWS session token for the management account. Used from pipeline_mode=target or target_all onward."
+  TF_VAR_trusted_irsa_role_arn:
+    value: ""
+    description: "Prowler App IRSA role ARN from the tools account. Required for pipeline_mode=target or target_all."
+  TARGET_ACCOUNT_ID:
+    value: ""
+    description: "Target AWS account ID for pipeline_mode=target. Not used by target_all."
 
 stages:
   - validate
