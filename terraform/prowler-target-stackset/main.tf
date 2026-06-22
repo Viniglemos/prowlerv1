@@ -116,8 +116,8 @@ resource "aws_cloudformation_stack_set" "this" {
 }
 
 resource "aws_cloudformation_stack_set_instance" "organization" {
-  stack_set_name            = aws_cloudformation_stack_set.this.name
-  stack_set_instance_region = var.aws_region
+  stack_set_name = aws_cloudformation_stack_set.this.name
+  region         = var.aws_region
 
   deployment_targets {
     organizational_unit_ids = local.deployment_organizational_unit_ids
