@@ -10,7 +10,7 @@ terraform {
 
   backend "s3" {
     bucket  = "replace-with-management-state-bucket"
-    key     = "bootstrap/org-terraform-deployment-role.tfstate"
+    key     = "prowler-target-stackset.tfstate"
     encrypt = true
     region  = "us-east-1"
     profile = ""

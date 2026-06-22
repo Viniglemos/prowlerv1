@@ -23,7 +23,7 @@ The current direction is intentionally simple:
 |   `-- n8n/
 |-- terraform/
 |   |-- prowler-app-irsa/
-|   `-- prowler-target-role/
+|   `-- prowler-target-stackset/
 `-- helm/
     `-- prowler-app/
         |-- Chart.yaml
@@ -196,9 +196,9 @@ Prowler App pod
 This repository includes Terraform for the Prowler-specific IAM layers:
 
 - `terraform/prowler-app-irsa`: creates the IRSA role used by the Kubernetes ServiceAccount.
-- `terraform/prowler-target-role`: creates the target account role assumed by the IRSA role.
+- `terraform/prowler-target-stackset`: creates the target account scan role through AWS CloudFormation StackSets.
 
-The corporate Terraform deployment role used by the management account to operate in member accounts is an external platform prerequisite. It is intentionally not managed by this repository because it will be shared by other Terraform applications.
+The preferred all-account deployment path does not require `OrgTerraformDeploymentRole` in each target account. It uses a service-managed CloudFormation StackSet from the AWS Organizations management account.
 
 The target role attaches AWS managed audit/read-only policies to support V1 and the planned V2 expansion:
 
@@ -219,9 +219,9 @@ This helps with longer scans. It does not bypass AWS role chaining limits, so th
 
 ### Creation Order
 
-1. Ensure the external corporate Terraform deployment role exists in the target accounts.
+1. Create the management Terraform state bucket if it does not exist.
 2. Create the IRSA role in the EKS/tools account.
-3. Create `ProwlerScanRole` in each target account, trusting the IRSA role ARN.
+3. Create `ProwlerScanRole` in the target accounts through CloudFormation StackSets, trusting the IRSA role ARN.
 4. Deploy the Helm chart with the IRSA annotation:
 
 ```yaml
@@ -235,7 +235,7 @@ serviceAccount:
 arn:aws:iam::<target-account-id>:role/ProwlerScanRole
 ```
 
-The optional `external_id` variable can be enabled for the target role trust policy if required by the Prowler App provider configuration.
+The AWS Organizations management account must have service-managed CloudFormation StackSets enabled/trusted access available before `PIPELINE_MODE=target_all` can create roles across member accounts.
 
 ### Discover AWS Account IDs
 
@@ -255,9 +255,9 @@ target-account-ids.auto.tfvars.example
 
 `generated/` is ignored by Git. Do not commit account exports unless explicitly approved.
 
-The helper only discovers account IDs for inventory and manual provider registration. `TF_VAR_target_account_ids` is optional. When it is not set, the IRSA policy allows assuming `ProwlerScanRole` with the same role name in any AWS account, which matches the current requirement to onboard all accounts without exception.
+The helper only discovers account IDs for inventory and manual provider registration. It is not required by the `target_all` pipeline path. `TF_VAR_target_account_ids` is optional. When it is not set, the IRSA policy allows assuming `ProwlerScanRole` with the same role name in any AWS account, which matches the current requirement to onboard all accounts without exception.
 
-The `terraform/prowler-target-role` module uses the current management-account credentials as the base identity and assumes `OrgTerraformDeploymentRole` in the target account defined by `TARGET_ACCOUNT_ID`. Run the target role jobs once per account, or automate the same flow later with an approved loop/orchestrator.
+For all-account onboarding, use `PIPELINE_MODE=target_all`. It applies `terraform/prowler-target-stackset` from the AWS Organizations management account and creates `ProwlerScanRole` through a service-managed CloudFormation StackSet. Because service-managed StackSets do not deploy into the management account itself, the same module also creates `ProwlerScanRole` locally in the management account by default.
 
 The summary should include:
 
@@ -294,11 +294,11 @@ Terraform validation:
 
 ```bash
 terraform -chdir=terraform/prowler-app-irsa fmt
-terraform -chdir=terraform/prowler-target-role fmt
+terraform -chdir=terraform/prowler-target-stackset fmt
 terraform -chdir=terraform/prowler-app-irsa init -backend=false
 terraform -chdir=terraform/prowler-app-irsa validate
-terraform -chdir=terraform/prowler-target-role init -backend=false
-terraform -chdir=terraform/prowler-target-role validate
+terraform -chdir=terraform/prowler-target-stackset init -backend=false
+terraform -chdir=terraform/prowler-target-stackset validate
 ```
 
 ## GitLab Variables
@@ -311,8 +311,7 @@ Use `PIPELINE_MODE` to choose which part of the pipeline appears/runs:
 validate     Helm and Terraform validation only
 create_management_state_bucket Create the management S3 backend bucket once
 irsa         IRSA Terraform plan/apply jobs
-target       ProwlerScanRole Terraform plan/apply jobs
-target_all   Apply ProwlerScanRole to all active AWS Organizations accounts
+target_all   Apply ProwlerScanRole to AWS Organizations accounts through CloudFormation StackSets
 maintenance  Kubernetes Secret maintenance jobs
 deploy       Helm deploy job
 all          Show all jobs
@@ -373,16 +372,11 @@ TF_INIT_ARGS
 TF_VAR_oidc_provider_arn
 TF_VAR_oidc_provider_url
 TF_VAR_trusted_irsa_role_arn
-TARGET_ACCOUNT_ID
 MANAGEMENT_STATE_BUCKET
-TF_VAR_terraform_deployment_role_name
-TF_VAR_external_id
 TF_VAR_max_session_duration
 ```
 
-For `PIPELINE_MODE=target`, provide `TARGET_ACCOUNT_ID` and run one account at a time.
-
-For `PIPELINE_MODE=target_all`, the pipeline discovers active accounts through AWS Organizations and applies `ProwlerScanRole` to every active account by assuming `OrgTerraformDeploymentRole`. There is no exclusion list because every active account must be scanned.
+For `PIPELINE_MODE=target_all`, the pipeline applies a service-managed CloudFormation StackSet from the AWS Organizations management account. The StackSet creates `ProwlerScanRole` in the organization scope, with no exclusion list because every active account must be scanned.
 
 Run `PIPELINE_MODE=create_management_state_bucket` once with management account credentials if the management backend bucket does not exist yet. It creates the bucket defined by `MANAGEMENT_STATE_BUCKET`. Use a globally unique name, for example `state-management-prowler-<management-account-id>`. This job uses local Terraform state temporarily because a Terraform backend bucket must exist before it can be used as a backend.
 
@@ -393,7 +387,7 @@ terraform/prowler-app-irsa:
   bucket: state-tools
   region: us-east-1
 
-terraform/prowler-target-role:
+terraform/prowler-target-stackset:
   bucket: MANAGEMENT_STATE_BUCKET
   region: us-east-1
 ```
@@ -402,7 +396,7 @@ State keys:
 
 ```text
 terraform/prowler-app-irsa: prowler-app-irsa.tfstate
-terraform/prowler-target-role: prowler-target-role/<TARGET_ACCOUNT_ID>.tfstate
+terraform/prowler-target-stackset: prowler-target-stackset.tfstate
 ```
 
 `TF_INIT_ARGS` is optional and should only be used for company-approved extra `terraform init` arguments.

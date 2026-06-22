@@ -6,9 +6,7 @@ spec:
       options:
         - "validate"
         - "create_management_state_bucket"
-        - "bootstrap_org_terraform_role"
         - "irsa"
-        - "target"
         - "target_all"
         - "maintenance"
         - "deploy"
@@ -28,28 +26,19 @@ variables:
   PROWLER_APP_EXISTING_SECRET: "prowler-app-secret"
   AWS_ACCESS_KEY_ID:
     value: ""
-    description: "Temporary AWS access key for the management account. Used from pipeline_mode=target or target_all onward."
+    description: "Temporary AWS access key for the management account. Used from pipeline_mode=target_all onward."
   AWS_SECRET_ACCESS_KEY:
     value: ""
-    description: "Temporary AWS secret access key for the management account. Used from pipeline_mode=target or target_all onward."
+    description: "Temporary AWS secret access key for the management account. Used from pipeline_mode=target_all onward."
   AWS_SESSION_TOKEN:
     value: ""
-    description: "Temporary AWS session token for the management account. Used from pipeline_mode=target or target_all onward."
+    description: "Temporary AWS session token for the management account. Used from pipeline_mode=target_all onward."
   TF_VAR_trusted_irsa_role_arn:
     value: ""
-    description: "Prowler App IRSA role ARN from the tools account. Required for pipeline_mode=target or target_all."
-  TARGET_ACCOUNT_ID:
-    value: ""
-    description: "Target AWS account ID for pipeline_mode=target. Not used by target_all."
+    description: "Prowler App IRSA role ARN from the tools account. Required for pipeline_mode=target_all."
   MANAGEMENT_STATE_BUCKET:
     value: ""
     description: "Globally unique S3 bucket name for management account Terraform state, for example state-management-prowler-<management-account-id>."
-  TRUSTED_PRINCIPAL_ARNS:
-    value: ""
-    description: "JSON/HCL list of IAM principal ARNs allowed to assume OrgTerraformDeploymentRole. Required for pipeline_mode=bootstrap_org_terraform_role."
-  BOOTSTRAP_ROLE_NAME:
-    value: "OrgTerraformDeploymentRole"
-    description: "Role name created by the bootstrap StackSet. Keep default unless an unmanaged role with this name already exists."
 
 stages:
   - validate
@@ -80,7 +69,7 @@ terraform_validate:
     name: hashicorp/terraform:1.9.8
     entrypoint: [""]
   rules:
-    - if: '$PIPELINE_MODE =~ /^(validate|create_management_state_bucket|bootstrap_org_terraform_role|irsa|target|target_all|all)$/'
+    - if: '$PIPELINE_MODE =~ /^(validate|create_management_state_bucket|irsa|target_all|all)$/'
   script:
     - |
       validate_irsa() {
@@ -89,42 +78,32 @@ terraform_validate:
         terraform -chdir=terraform/prowler-app-irsa validate
       }
 
-      validate_target() {
-        terraform -chdir=terraform/prowler-target-role fmt -check
-        terraform -chdir=terraform/prowler-target-role init -backend=false
-        terraform -chdir=terraform/prowler-target-role validate
-      }
-
       validate_management_state() {
         terraform -chdir=terraform/management-state-bucket fmt -check
         terraform -chdir=terraform/management-state-bucket init -backend=false
         terraform -chdir=terraform/management-state-bucket validate
       }
 
-      validate_bootstrap_org_terraform_role() {
-        terraform -chdir=bootstrap/org-terraform-deployment-role fmt -check
-        terraform -chdir=bootstrap/org-terraform-deployment-role init -backend=false
-        terraform -chdir=bootstrap/org-terraform-deployment-role validate
+      validate_target_stackset() {
+        terraform -chdir=terraform/prowler-target-stackset fmt -check
+        terraform -chdir=terraform/prowler-target-stackset init -backend=false
+        terraform -chdir=terraform/prowler-target-stackset validate
       }
 
       case "$PIPELINE_MODE" in
         validate|all)
           validate_management_state
-          validate_bootstrap_org_terraform_role
+          validate_target_stackset
           validate_irsa
-          validate_target
           ;;
         create_management_state_bucket)
           validate_management_state
           ;;
-        bootstrap_org_terraform_role)
-          validate_bootstrap_org_terraform_role
-          ;;
         irsa)
           validate_irsa
           ;;
-        target|target_all)
-          validate_target
+        target_all)
+          validate_target_stackset
           ;;
         *)
           echo "Unsupported PIPELINE_MODE: $PIPELINE_MODE" >&2
@@ -158,51 +137,6 @@ create_management_state_bucket:
       - terraform/management-state-bucket/terraform.tfstate
   allow_failure: false
   manual_confirmation: "Create the S3 backend bucket for management Terraform state?"
-
-terraform_plan_bootstrap_org_terraform_role:
-  stage: infra_plan
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  needs:
-    - terraform_validate
-  rules:
-    - if: '$PIPELINE_MODE =~ /^(bootstrap_org_terraform_role|all)$/'
-      when: manual
-  script:
-    - |
-      if [ -z "$MANAGEMENT_STATE_BUCKET" ] || [ -z "$TRUSTED_PRINCIPAL_ARNS" ]; then
-        echo "MANAGEMENT_STATE_BUCKET and TRUSTED_PRINCIPAL_ARNS are required." >&2
-        exit 2
-      fi
-    - terraform -chdir=bootstrap/org-terraform-deployment-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" ${TF_INIT_ARGS:-}
-    - terraform -chdir=bootstrap/org-terraform-deployment-role plan -out=tfplan -var="aws_region=us-east-1" -var="role_name=${BOOTSTRAP_ROLE_NAME}" -var="trusted_principal_arns=${TRUSTED_PRINCIPAL_ARNS}"
-  artifacts:
-    expire_in: 1 day
-    paths:
-      - bootstrap/org-terraform-deployment-role/tfplan
-
-terraform_apply_bootstrap_org_terraform_role:
-  stage: infra_apply
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  needs:
-    - terraform_plan_bootstrap_org_terraform_role
-  rules:
-    - if: '$PIPELINE_MODE =~ /^(bootstrap_org_terraform_role|all)$/'
-      when: manual
-  script:
-    - |
-      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
-        echo "MANAGEMENT_STATE_BUCKET is required." >&2
-        exit 2
-      fi
-    - terraform -chdir=bootstrap/org-terraform-deployment-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" ${TF_INIT_ARGS:-}
-    - terraform -chdir=bootstrap/org-terraform-deployment-role apply -auto-approve tfplan
-    - terraform -chdir=bootstrap/org-terraform-deployment-role output
-  allow_failure: false
-  manual_confirmation: "Create or update OrgTerraformDeploymentRole through AWS Organizations StackSets?"
 
 terraform_plan_irsa:
   stage: infra_plan
@@ -244,7 +178,7 @@ terraform_apply_irsa:
   allow_failure: false
   manual_confirmation: "Apply Terraform changes for the Prowler App IRSA role?"
 
-terraform_plan_target_role:
+terraform_plan_all_target_roles:
   stage: infra_plan
   image:
     name: hashicorp/terraform:1.9.8
@@ -252,69 +186,8 @@ terraform_plan_target_role:
   needs:
     - terraform_validate
   rules:
-    - if: '$PIPELINE_MODE =~ /^(target|all)$/'
-      when: manual
-  script:
-    - |
-      if [ -z "$TARGET_ACCOUNT_ID" ] || [ -z "$TF_VAR_trusted_irsa_role_arn" ]; then
-        echo "TARGET_ACCOUNT_ID and TF_VAR_trusted_irsa_role_arn are required." >&2
-        exit 2
-      fi
-      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
-        echo "MANAGEMENT_STATE_BUCKET is required." >&2
-        exit 2
-      fi
-    - terraform -chdir=terraform/prowler-target-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
-    - terraform -chdir=terraform/prowler-target-role plan -out=tfplan -var="aws_region=${AWS_REGION:-us-east-1}" -var="target_account_id=${TARGET_ACCOUNT_ID}"
-  artifacts:
-    expire_in: 1 day
-    paths:
-      - terraform/prowler-target-role/tfplan
-
-terraform_apply_target_role:
-  stage: infra_apply
-  image:
-    name: hashicorp/terraform:1.9.8
-    entrypoint: [""]
-  needs:
-    - terraform_plan_target_role
-  rules:
-    - if: '$PIPELINE_MODE =~ /^(target|all)$/'
-      when: manual
-  script:
-    - |
-      if [ -z "$TARGET_ACCOUNT_ID" ]; then
-        echo "TARGET_ACCOUNT_ID is required." >&2
-        exit 2
-      fi
-      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
-        echo "MANAGEMENT_STATE_BUCKET is required." >&2
-        exit 2
-      fi
-    - terraform -chdir=terraform/prowler-target-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
-    - terraform -chdir=terraform/prowler-target-role apply -auto-approve tfplan
-    - terraform -chdir=terraform/prowler-target-role output -raw role_arn
-  allow_failure: false
-  manual_confirmation: "Apply Terraform changes for target account ProwlerScanRole?"
-
-terraform_apply_all_target_roles:
-  stage: infra_apply
-  image:
-    name: python:3.12-slim
-    entrypoint: [""]
-  needs:
-    - terraform_validate
-  rules:
     - if: '$PIPELINE_MODE =~ /^(target_all|all)$/'
       when: manual
-  before_script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends curl unzip jq ca-certificates
-    - pip install --no-cache-dir awscli
-    - curl -fsSL -o /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip
-    - unzip -q /tmp/terraform.zip -d /usr/local/bin
-    - terraform version
-    - aws --version
   script:
     - |
       if [ -z "$TF_VAR_trusted_irsa_role_arn" ]; then
@@ -325,34 +198,34 @@ terraform_apply_all_target_roles:
         echo "MANAGEMENT_STATE_BUCKET is required." >&2
         exit 2
       fi
+    - terraform -chdir=terraform/prowler-target-stackset init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" ${TF_INIT_ARGS:-}
+    - terraform -chdir=terraform/prowler-target-stackset plan -out=tfplan -var="aws_region=us-east-1"
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - terraform/prowler-target-stackset/tfplan
 
-      aws organizations list-accounts \
-        --query 'Accounts[?Status==`ACTIVE`].Id' \
-        --output json | jq -r '.[]' > target-accounts.txt
-
-      if [ ! -s target-accounts.txt ]; then
-        echo "No active AWS Organizations accounts found." >&2
+terraform_apply_all_target_roles:
+  stage: infra_apply
+  image:
+    name: hashicorp/terraform:1.9.8
+    entrypoint: [""]
+  needs:
+    - terraform_plan_all_target_roles
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(target_all|all)$/'
+      when: manual
+  script:
+    - |
+      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
+        echo "MANAGEMENT_STATE_BUCKET is required." >&2
         exit 2
       fi
-
-      while IFS= read -r account_id; do
-        echo "Applying ProwlerScanRole in account $account_id"
-        terraform -chdir=terraform/prowler-target-role init \
-          -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" \
-          -backend-config="region=us-east-1" \
-          -backend-config="key=prowler-target-role/${account_id}.tfstate" \
-          ${TF_INIT_ARGS:-}
-        terraform -chdir=terraform/prowler-target-role apply -auto-approve \
-          -var="aws_region=${AWS_REGION:-us-east-1}" \
-          -var="target_account_id=${account_id}"
-      done < target-accounts.txt
-  artifacts:
-    when: always
-    expire_in: 7 days
-    paths:
-      - target-accounts.txt
+    - terraform -chdir=terraform/prowler-target-stackset init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" ${TF_INIT_ARGS:-}
+    - terraform -chdir=terraform/prowler-target-stackset apply -auto-approve tfplan
+    - terraform -chdir=terraform/prowler-target-stackset output
   allow_failure: false
-  manual_confirmation: "Apply ProwlerScanRole to all active AWS Organizations accounts?"
+  manual_confirmation: "Apply ProwlerScanRole StackSet to all AWS Organizations accounts?"
 
 update_postgres_secret:
   stage: maintenance
