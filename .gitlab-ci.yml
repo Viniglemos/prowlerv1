@@ -6,6 +6,7 @@ spec:
       options:
         - "validate"
         - "create_management_state_bucket"
+        - "bootstrap_org_terraform_role"
         - "irsa"
         - "target"
         - "target_all"
@@ -43,6 +44,12 @@ variables:
   MANAGEMENT_STATE_BUCKET:
     value: ""
     description: "Globally unique S3 bucket name for management account Terraform state, for example state-management-prowler-<management-account-id>."
+  TRUSTED_PRINCIPAL_ARNS:
+    value: ""
+    description: "JSON/HCL list of IAM principal ARNs allowed to assume OrgTerraformDeploymentRole. Required for pipeline_mode=bootstrap_org_terraform_role."
+  BOOTSTRAP_ROLE_NAME:
+    value: "OrgTerraformDeploymentRole"
+    description: "Role name created by the bootstrap StackSet. Keep default unless an unmanaged role with this name already exists."
 
 stages:
   - validate
@@ -73,7 +80,7 @@ terraform_validate:
     name: hashicorp/terraform:1.9.8
     entrypoint: [""]
   rules:
-    - if: '$PIPELINE_MODE =~ /^(validate|create_management_state_bucket|irsa|target|target_all|all)$/'
+    - if: '$PIPELINE_MODE =~ /^(validate|create_management_state_bucket|bootstrap_org_terraform_role|irsa|target|target_all|all)$/'
   script:
     - |
       validate_irsa() {
@@ -94,14 +101,24 @@ terraform_validate:
         terraform -chdir=terraform/management-state-bucket validate
       }
 
+      validate_bootstrap_org_terraform_role() {
+        terraform -chdir=bootstrap/org-terraform-deployment-role fmt -check
+        terraform -chdir=bootstrap/org-terraform-deployment-role init -backend=false
+        terraform -chdir=bootstrap/org-terraform-deployment-role validate
+      }
+
       case "$PIPELINE_MODE" in
         validate|all)
           validate_management_state
+          validate_bootstrap_org_terraform_role
           validate_irsa
           validate_target
           ;;
         create_management_state_bucket)
           validate_management_state
+          ;;
+        bootstrap_org_terraform_role)
+          validate_bootstrap_org_terraform_role
           ;;
         irsa)
           validate_irsa
@@ -141,6 +158,51 @@ create_management_state_bucket:
       - terraform/management-state-bucket/terraform.tfstate
   allow_failure: false
   manual_confirmation: "Create the S3 backend bucket for management Terraform state?"
+
+terraform_plan_bootstrap_org_terraform_role:
+  stage: infra_plan
+  image:
+    name: hashicorp/terraform:1.9.8
+    entrypoint: [""]
+  needs:
+    - terraform_validate
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(bootstrap_org_terraform_role|all)$/'
+      when: manual
+  script:
+    - |
+      if [ -z "$MANAGEMENT_STATE_BUCKET" ] || [ -z "$TRUSTED_PRINCIPAL_ARNS" ]; then
+        echo "MANAGEMENT_STATE_BUCKET and TRUSTED_PRINCIPAL_ARNS are required." >&2
+        exit 2
+      fi
+    - terraform -chdir=bootstrap/org-terraform-deployment-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" ${TF_INIT_ARGS:-}
+    - terraform -chdir=bootstrap/org-terraform-deployment-role plan -out=tfplan -var="aws_region=us-east-1" -var="role_name=${BOOTSTRAP_ROLE_NAME}" -var="trusted_principal_arns=${TRUSTED_PRINCIPAL_ARNS}"
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - bootstrap/org-terraform-deployment-role/tfplan
+
+terraform_apply_bootstrap_org_terraform_role:
+  stage: infra_apply
+  image:
+    name: hashicorp/terraform:1.9.8
+    entrypoint: [""]
+  needs:
+    - terraform_plan_bootstrap_org_terraform_role
+  rules:
+    - if: '$PIPELINE_MODE =~ /^(bootstrap_org_terraform_role|all)$/'
+      when: manual
+  script:
+    - |
+      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
+        echo "MANAGEMENT_STATE_BUCKET is required." >&2
+        exit 2
+      fi
+    - terraform -chdir=bootstrap/org-terraform-deployment-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" ${TF_INIT_ARGS:-}
+    - terraform -chdir=bootstrap/org-terraform-deployment-role apply -auto-approve tfplan
+    - terraform -chdir=bootstrap/org-terraform-deployment-role output
+  allow_failure: false
+  manual_confirmation: "Create or update OrgTerraformDeploymentRole through AWS Organizations StackSets?"
 
 terraform_plan_irsa:
   stage: infra_plan
