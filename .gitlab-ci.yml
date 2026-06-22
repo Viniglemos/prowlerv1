@@ -41,8 +41,8 @@ variables:
     value: ""
     description: "Target AWS account ID for pipeline_mode=target. Not used by target_all."
   MANAGEMENT_STATE_BUCKET:
-    value: "state-management"
-    description: "S3 bucket name for management account Terraform state. Used by pipeline_mode=create_management_state_bucket."
+    value: ""
+    description: "Globally unique S3 bucket name for management account Terraform state, for example state-management-prowler-<management-account-id>."
 
 stages:
   - validate
@@ -126,8 +126,13 @@ create_management_state_bucket:
     - if: '$PIPELINE_MODE =~ /^(create_management_state_bucket|all)$/'
       when: manual
   script:
+    - |
+      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
+        echo "MANAGEMENT_STATE_BUCKET is required. Use a globally unique S3 bucket name." >&2
+        exit 2
+      fi
     - terraform -chdir=terraform/management-state-bucket init -backend=false
-    - terraform -chdir=terraform/management-state-bucket apply -auto-approve -var="aws_region=${AWS_REGION:-us-east-1}" -var="bucket_name=${MANAGEMENT_STATE_BUCKET}"
+    - terraform -chdir=terraform/management-state-bucket apply -auto-approve -var="aws_region=us-east-1" -var="bucket_name=${MANAGEMENT_STATE_BUCKET}"
     - terraform -chdir=terraform/management-state-bucket output -raw bucket_name
   artifacts:
     when: always
@@ -193,7 +198,11 @@ terraform_plan_target_role:
         echo "TARGET_ACCOUNT_ID and TF_VAR_trusted_irsa_role_arn are required." >&2
         exit 2
       fi
-    - terraform -chdir=terraform/prowler-target-role init -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
+      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
+        echo "MANAGEMENT_STATE_BUCKET is required." >&2
+        exit 2
+      fi
+    - terraform -chdir=terraform/prowler-target-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
     - terraform -chdir=terraform/prowler-target-role plan -out=tfplan -var="aws_region=${AWS_REGION:-us-east-1}" -var="target_account_id=${TARGET_ACCOUNT_ID}"
   artifacts:
     expire_in: 1 day
@@ -216,7 +225,11 @@ terraform_apply_target_role:
         echo "TARGET_ACCOUNT_ID is required." >&2
         exit 2
       fi
-    - terraform -chdir=terraform/prowler-target-role init -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
+      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
+        echo "MANAGEMENT_STATE_BUCKET is required." >&2
+        exit 2
+      fi
+    - terraform -chdir=terraform/prowler-target-role init -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" -backend-config="region=us-east-1" -backend-config="key=prowler-target-role/${TARGET_ACCOUNT_ID}.tfstate" ${TF_INIT_ARGS:-}
     - terraform -chdir=terraform/prowler-target-role apply -auto-approve tfplan
     - terraform -chdir=terraform/prowler-target-role output -raw role_arn
   allow_failure: false
@@ -246,6 +259,10 @@ terraform_apply_all_target_roles:
         echo "TF_VAR_trusted_irsa_role_arn is required." >&2
         exit 2
       fi
+      if [ -z "$MANAGEMENT_STATE_BUCKET" ]; then
+        echo "MANAGEMENT_STATE_BUCKET is required." >&2
+        exit 2
+      fi
 
       aws organizations list-accounts \
         --query 'Accounts[?Status==`ACTIVE`].Id' \
@@ -259,6 +276,8 @@ terraform_apply_all_target_roles:
       while IFS= read -r account_id; do
         echo "Applying ProwlerScanRole in account $account_id"
         terraform -chdir=terraform/prowler-target-role init \
+          -backend-config="bucket=${MANAGEMENT_STATE_BUCKET}" \
+          -backend-config="region=us-east-1" \
           -backend-config="key=prowler-target-role/${account_id}.tfstate" \
           ${TF_INIT_ARGS:-}
         terraform -chdir=terraform/prowler-target-role apply -auto-approve \

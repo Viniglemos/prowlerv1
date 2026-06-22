@@ -384,7 +384,7 @@ For `PIPELINE_MODE=target`, provide `TARGET_ACCOUNT_ID` and run one account at a
 
 For `PIPELINE_MODE=target_all`, the pipeline discovers active accounts through AWS Organizations and applies `ProwlerScanRole` to every active account by assuming `OrgTerraformDeploymentRole`. There is no exclusion list because every active account must be scanned.
 
-Run `PIPELINE_MODE=create_management_state_bucket` once with management account credentials if the management backend bucket does not exist yet. It creates the bucket defined by `MANAGEMENT_STATE_BUCKET`, defaulting to `state-management`. This job uses local Terraform state temporarily because a Terraform backend bucket must exist before it can be used as a backend.
+Run `PIPELINE_MODE=create_management_state_bucket` once with management account credentials if the management backend bucket does not exist yet. It creates the bucket defined by `MANAGEMENT_STATE_BUCKET`. Use a globally unique name, for example `state-management-prowler-<management-account-id>`. This job uses local Terraform state temporarily because a Terraform backend bucket must exist before it can be used as a backend.
 
 Terraform state uses the company S3 backends configured in each module:
 
@@ -394,7 +394,7 @@ terraform/prowler-app-irsa:
   region: us-east-1
 
 terraform/prowler-target-role:
-  bucket: state-management
+  bucket: MANAGEMENT_STATE_BUCKET
   region: us-east-1
 ```
 

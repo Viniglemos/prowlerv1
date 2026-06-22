@@ -7,7 +7,6 @@ variable "aws_region" {
 variable "bucket_name" {
   description = "Nome do bucket S3 usado como backend Terraform da conta management."
   type        = string
-  default     = "state-management"
 }
 
 variable "tags" {
@@ -15,4 +14,3 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
-
