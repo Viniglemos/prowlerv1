@@ -320,6 +320,7 @@ deploy_app:
       PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A="${PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A:-}"
       PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B="${PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B:-}"
       POSTGRES_PORT="${POSTGRES_PORT:-5432}"
+      PROWLER_APP_ALLOWED_HOSTS_HELM="$(printf '%s' "$PROWLER_APP_ALLOWED_HOSTS" | sed 's/,/\\,/g')"
 
       if [ -z "$POSTGRES_EXISTING_SECRET" ]; then
         echo "POSTGRES_EXISTING_SECRET is required for deploy." >&2
@@ -348,7 +349,7 @@ deploy_app:
         --set postgres.appUser="$POSTGRES_USER" \
         --set postgres.existingSecret="$POSTGRES_EXISTING_SECRET" \
         --set serviceAccount.irsaRoleArn="$PROWLER_APP_IRSA_ROLE_ARN" \
-        --set app.allowedHosts="$PROWLER_APP_ALLOWED_HOSTS" \
+        --set-string app.allowedHosts="$PROWLER_APP_ALLOWED_HOSTS_HELM" \
         --set gateway.enabled="$PROWLER_APP_GATEWAY_ENABLED" \
         --set gateway.host="$PROWLER_APP_GATEWAY_HOST" \
         --set nightlyScans.enabled="$PROWLER_NIGHTLY_SCANS_ENABLED" \
