@@ -144,27 +144,29 @@ nightlyScans:
   groupA:
     name: aws-group-a
     enabled: true
-    schedule: "0 2 * * *"
+    schedule: "0 18 * * 2,4"
     providerIds: "<aws-provider-id-a> <aws-provider-id-b>"
   groupB:
     name: aws-group-b
     enabled: true
-    schedule: "0 4 * * *"
+    schedule: "0 20 * * 2,4"
     providerIds: "<aws-provider-id-c> <aws-provider-id-d>"
 ```
 
 The API endpoint and body template are configurable in `values.yaml` because they should be confirmed against the deployed Prowler App API version before production use.
 
-The default schedule is split into two nightly windows:
+The default schedule runs twice a week, split into two nightly windows:
 
 ```text
-02:00 - group A providers
-04:00 - group B providers
+Tuesday and Thursday, 18:00 - group A providers
+Tuesday and Thursday, 20:00 - group B providers
 Timezone: America/Sao_Paulo
 activeDeadlineSeconds: 7200
 ```
 
 `activeDeadlineSeconds` limits the Kubernetes trigger job to 2 hours. The actual Prowler scan duration is controlled by the Prowler App after the API request is accepted.
+
+Only providers configured in `PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A` and `PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B` are triggered. The AWS roles can exist in every account, but the Prowler App will only scan the accounts/providers added to the app and included in these groups.
 
 At deploy time, pass provider IDs as space-separated strings:
 

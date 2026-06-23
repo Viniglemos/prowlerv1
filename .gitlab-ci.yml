@@ -365,8 +365,8 @@ deploy_app:
         --set gateway.host="$PROWLER_APP_GATEWAY_HOST" \
         --set nightlyScans.enabled="$PROWLER_NIGHTLY_SCANS_ENABLED" \
         --set nightlyScans.auth.existingSecret="$PROWLER_NIGHTLY_SCANS_AUTH_SECRET" \
-        --set nightlyScans.groupA.schedule="0 2 * * *" \
-        --set nightlyScans.groupB.schedule="0 4 * * *" \
+        --set nightlyScans.groupA.schedule="0 18 * * 2,4" \
+        --set nightlyScans.groupB.schedule="0 20 * * 2,4" \
         --set nightlyScans.activeDeadlineSeconds=7200 \
         --set-string nightlyScans.groupA.providerIds="$PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A" \
         --set-string nightlyScans.groupB.providerIds="$PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B" \

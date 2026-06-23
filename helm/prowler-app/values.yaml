@@ -43,9 +43,9 @@ postgres:
   external: true
   host: ""
   port: 5432
-  database: prowler_db
-  adminUser: prowler_admin
-  appUser: prowler
+  database: prowler
+  adminUser: prd_prowler_user
+  appUser: prd_prowler_user
   existingSecret: ""
   adminPasswordKey: POSTGRES_ADMIN_PASSWORD
   appPasswordKey: POSTGRES_PASSWORD
@@ -189,12 +189,12 @@ nightlyScans:
   groupA:
     name: aws-group-a
     enabled: true
-    schedule: "0 2 * * *"
+    schedule: "0 18 * * 2,4"
     providerIds: ""
   groupB:
     name: aws-group-b
     enabled: true
-    schedule: "0 4 * * *"
+    schedule: "0 20 * * 2,4"
     providerIds: ""
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
