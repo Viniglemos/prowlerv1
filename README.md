@@ -140,21 +140,40 @@ Configure real AWS provider IDs from Prowler App:
 nightlyScans:
   enabled: true
   auth:
-    existingSecret: "prowler-app-api-token"
-  jobs:
-    - name: aws-group-a
-      enabled: true
-      schedule: "0 2 * * *"
-      providerIds:
-        - "<aws-provider-id-a>"
-    - name: aws-group-b
-      enabled: true
-      schedule: "0 4 * * *"
-      providerIds:
-        - "<aws-provider-id-b>"
+    existingSecret: "prowler-app-secret"
+  groupA:
+    name: aws-group-a
+    enabled: true
+    schedule: "0 2 * * *"
+    providerIds: "<aws-provider-id-a> <aws-provider-id-b>"
+  groupB:
+    name: aws-group-b
+    enabled: true
+    schedule: "0 4 * * *"
+    providerIds: "<aws-provider-id-c> <aws-provider-id-d>"
 ```
 
 The API endpoint and body template are configurable in `values.yaml` because they should be confirmed against the deployed Prowler App API version before production use.
+
+The default schedule is split into two nightly windows:
+
+```text
+02:00 - group A providers
+04:00 - group B providers
+Timezone: America/Sao_Paulo
+activeDeadlineSeconds: 7200
+```
+
+`activeDeadlineSeconds` limits the Kubernetes trigger job to 2 hours. The actual Prowler scan duration is controlled by the Prowler App after the API request is accepted.
+
+At deploy time, pass provider IDs as space-separated strings:
+
+```text
+PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A=provider-id-1 provider-id-2
+PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B=provider-id-3 provider-id-4
+```
+
+The trigger token must exist in the configured secret as `PROWLER_APP_API_TOKEN`. The maintenance job stores it in `prowler-app-secret` when the GitLab variable `PROWLER_APP_API_TOKEN` is set.
 
 Kubernetes is the runtime platform for the Prowler App in this phase. Kubernetes resources are not part of the scan scope yet.
 
@@ -358,6 +377,7 @@ DJANGO_TOKEN_SIGNING_KEY
 DJANGO_TOKEN_VERIFYING_KEY
 DJANGO_SECRETS_ENCRYPTION_KEY
 VALKEY_PASSWORD
+PROWLER_APP_API_TOKEN
 ```
 
 Configure these variables as masked/protected GitLab variables. The job creates or updates the Kubernetes Secret named by `PROWLER_APP_EXISTING_SECRET`.
@@ -374,6 +394,15 @@ TF_VAR_oidc_provider_url
 TF_VAR_trusted_irsa_role_arn
 MANAGEMENT_STATE_BUCKET
 TF_VAR_max_session_duration
+```
+
+Variables for nightly scan trigger jobs:
+
+```text
+PROWLER_NIGHTLY_SCANS_ENABLED
+PROWLER_NIGHTLY_SCANS_AUTH_SECRET
+PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A
+PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B
 ```
 
 For `PIPELINE_MODE=target_all`, the pipeline applies a service-managed CloudFormation StackSet from the AWS Organizations management account. The StackSet creates `ProwlerScanRole` in the organization scope, with no exclusion list because every active account must be scanned.

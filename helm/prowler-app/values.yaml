@@ -78,7 +78,7 @@ neo4j:
 
 app:
   authUrl: ""
-  allowedHosts: "localhost,127.0.0.1,prowler-app-api"
+  allowedHosts: "localhost,127.0.0.1,prowler-app-api,prowler.educacional.app"
   djangoPort: 8080
   uiPort: 3000
   mcpPort: 8000
@@ -127,32 +127,6 @@ worker:
       cpu: 2000m
       memory: 2Gi
 
-scheduledScaling:
-  enabled: false
-  timeZone: America/Sao_Paulo
-  serviceAccount:
-    create: true
-    name: ""
-  scaleUp:
-    enabled: false
-    schedule: "30 23 * * *"
-    workerReplicas: 2
-  scaleDown:
-    enabled: false
-    schedule: "0 7 * * *"
-    workerReplicas: 1
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 2
-  backoffLimit: 1
-  resources:
-    requests:
-      cpu: 25m
-      memory: 64Mi
-    limits:
-      cpu: 100m
-      memory: 128Mi
-
 workerBeat:
   enabled: true
   resources:
@@ -164,7 +138,7 @@ workerBeat:
       memory: 512Mi
 
 mcp:
-  enabled: true
+  enabled: false
   resources:
     requests:
       cpu: 100m
@@ -188,8 +162,8 @@ service:
     targetPort: 8000
 
 gateway:
-  enabled: false
-  host: ""
+  enabled: true
+  host: "prowler.educacional.app"
   pathPrefix: "/"
   parentRef:
     name: "gateway-privado"
@@ -203,29 +177,30 @@ gateway:
       sectionName: "http"
 
 nightlyScans:
-  enabled: false
+  enabled: true
   timeZone: America/Sao_Paulo
   apiBaseUrl: "http://prowler-app-api:8080/api/v1"
   scanEndpoint: "/scans"
   auth:
-    existingSecret: ""
+    existingSecret: "prowler-app-secret"
     tokenKey: PROWLER_APP_API_TOKEN
   requestBodyTemplate: |
     {"data":{"type":"scans","attributes":{},"relationships":{"provider":{"data":{"type":"providers","id":"{{PROVIDER_ID}}"}}}}}
-  jobs:
-    - name: aws-group-a
-      enabled: true
-      schedule: "0 2 * * *"
-      providerIds: []
-    - name: aws-group-b
-      enabled: true
-      schedule: "0 4 * * *"
-      providerIds: []
+  groupA:
+    name: aws-group-a
+    enabled: true
+    schedule: "0 2 * * *"
+    providerIds: ""
+  groupB:
+    name: aws-group-b
+    enabled: true
+    schedule: "0 4 * * *"
+    providerIds: ""
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
   failedJobsHistoryLimit: 3
   backoffLimit: 1
-  activeDeadlineSeconds: 10800
+  activeDeadlineSeconds: 7200
 
 projectMetadata:
   gitlabUrl: ""

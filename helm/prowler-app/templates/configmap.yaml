@@ -14,7 +14,7 @@ data:
   NEXT_PUBLIC_API_DOCS_URL: {{ printf "http://%s-api:%v/api/v1/docs" (include "prowler-app.fullname" .) .Values.service.api.port | quote }}
   AUTH_TRUST_HOST: "true"
   UI_PORT: {{ .Values.app.uiPort | quote }}
-  PROWLER_MCP_SERVER_URL: {{ printf "http://%s-mcp:%v/mcp" (include "prowler-app.fullname" .) .Values.service.mcp.port | quote }}
+  PROWLER_MCP_SERVER_URL: {{ ternary (printf "http://%s-mcp:%v/mcp" (include "prowler-app.fullname" .) .Values.service.mcp.port) "" .Values.mcp.enabled | quote }}
   POSTGRES_HOST: {{ required "postgres.host is required" .Values.postgres.host | quote }}
   POSTGRES_PORT: {{ .Values.postgres.port | quote }}
   POSTGRES_ADMIN_USER: {{ .Values.postgres.adminUser | quote }}

@@ -11,14 +11,14 @@ data:
     #!/bin/sh
     set -eu
 
-    if [ -z "${PROWLER_APP_API_TOKEN:-}" ]; then
-      echo "PROWLER_APP_API_TOKEN is required." >&2
-      exit 2
-    fi
-
     if [ -z "${PROVIDER_IDS:-}" ]; then
       echo "No provider IDs configured for this job."
       exit 0
+    fi
+
+    if [ -z "${PROWLER_APP_API_TOKEN:-}" ]; then
+      echo "PROWLER_APP_API_TOKEN is required when provider IDs are configured." >&2
+      exit 2
     fi
 
     for provider_id in ${PROVIDER_IDS}; do
@@ -32,7 +32,8 @@ data:
         "${PROWLER_APP_API_BASE_URL}${PROWLER_SCAN_ENDPOINT}"
     done
 ---
-{{- range $job := .Values.nightlyScans.jobs }}
+{{- $jobs := list .Values.nightlyScans.groupA .Values.nightlyScans.groupB }}
+{{- range $job := $jobs }}
 {{- if $job.enabled }}
 apiVersion: batch/v1
 kind: CronJob
@@ -77,7 +78,7 @@ spec:
                 - name: SCAN_REQUEST_BODY_TEMPLATE
                   value: {{ $root.Values.nightlyScans.requestBodyTemplate | quote }}
                 - name: PROVIDER_IDS
-                  value: {{ join " " $job.providerIds | quote }}
+                  value: {{ $job.providerIds | quote }}
                 - name: PROWLER_APP_API_TOKEN
                   valueFrom:
                     secretKeyRef:
