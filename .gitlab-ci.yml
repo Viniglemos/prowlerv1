@@ -338,6 +338,11 @@ deploy_app:
         exit 2
       fi
 
+      if ! printf '%s' "$POSTGRES_USER" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
+        echo "POSTGRES_USER must be a PostgreSQL identifier without hyphens because Prowler migrations create roles with this value. Use underscores, for example prd_prowler_user." >&2
+        exit 2
+      fi
+
       if [ -z "$PROWLER_APP_IRSA_ROLE_ARN" ]; then
         echo "PROWLER_APP_IRSA_ROLE_ARN is required for deploy." >&2
         exit 2

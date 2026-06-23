@@ -101,8 +101,8 @@ api:
   replicas: 1
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 150m
+      memory: 384Mi
     limits:
       cpu: 1000m
       memory: 1Gi
@@ -111,8 +111,8 @@ ui:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 50m
+      memory: 128Mi
     limits:
       cpu: 500m
       memory: 512Mi
@@ -121,8 +121,8 @@ worker:
   replicas: 1
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 250m
+      memory: 512Mi
     limits:
       cpu: 2000m
       memory: 2Gi
@@ -131,8 +131,8 @@ workerBeat:
   enabled: true
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 50m
+      memory: 128Mi
     limits:
       cpu: 500m
       memory: 512Mi

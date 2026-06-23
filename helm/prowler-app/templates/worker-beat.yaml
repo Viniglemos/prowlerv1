@@ -8,6 +8,8 @@ metadata:
     app.kubernetes.io/component: worker-beat
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "prowler-app.selectorLabels" . | nindent 6 }}
