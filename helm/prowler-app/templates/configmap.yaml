@@ -28,6 +28,7 @@ data:
   NEO4J_HOST: {{ .Values.neo4j.host | quote }}
   NEO4J_PORT: {{ .Values.neo4j.port | quote }}
   NEO4J_USER: {{ .Values.neo4j.user | quote }}
+  NEO4J_PASSWORD: ""
   DJANGO_TMP_OUTPUT_DIRECTORY: "/tmp/prowler_api_output"
   DJANGO_FINDINGS_BATCH_SIZE: "1000"
   DJANGO_ALLOWED_HOSTS: {{ .Values.app.allowedHosts | quote }}
