@@ -289,6 +289,8 @@ update_prowler_app_secret:
         --from-literal=DJANGO_TOKEN_VERIFYING_KEY="$DJANGO_TOKEN_VERIFYING_KEY" \
         --from-literal=DJANGO_SECRETS_ENCRYPTION_KEY="$DJANGO_SECRETS_ENCRYPTION_KEY" \
         --from-literal=VALKEY_PASSWORD="$VALKEY_PASSWORD" \
+        --from-literal=NEO4J_PASSWORD="${NEO4J_PASSWORD:-}" \
+        --from-literal=PROWLER_APP_API_TOKEN="${PROWLER_APP_API_TOKEN:-}" \
         --dry-run=client \
         -o yaml | kubectl apply -f -
   allow_failure: false
@@ -310,8 +312,13 @@ deploy_app:
       HELM_RELEASE_NAME="${HELM_RELEASE_NAME:-prowler-app}"
       KUBE_NAMESPACE="${KUBE_NAMESPACE:-security-audit}"
       PROWLER_APP_AUTH_URL="${PROWLER_APP_AUTH_URL:-https://prowler.educacional.app}"
+      PROWLER_APP_ALLOWED_HOSTS="${PROWLER_APP_ALLOWED_HOSTS:-localhost,127.0.0.1,prowler-app-api,prowler.educacional.app}"
       PROWLER_APP_GATEWAY_HOST="${PROWLER_APP_GATEWAY_HOST:-prowler.educacional.app}"
       PROWLER_APP_GATEWAY_ENABLED="${PROWLER_APP_GATEWAY_ENABLED:-true}"
+      PROWLER_NIGHTLY_SCANS_ENABLED="${PROWLER_NIGHTLY_SCANS_ENABLED:-true}"
+      PROWLER_NIGHTLY_SCANS_AUTH_SECRET="${PROWLER_NIGHTLY_SCANS_AUTH_SECRET:-$PROWLER_APP_EXISTING_SECRET}"
+      PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A="${PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A:-}"
+      PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B="${PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B:-}"
       POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
       if [ -z "$POSTGRES_EXISTING_SECRET" ]; then
@@ -341,8 +348,16 @@ deploy_app:
         --set postgres.appUser="$POSTGRES_USER" \
         --set postgres.existingSecret="$POSTGRES_EXISTING_SECRET" \
         --set serviceAccount.irsaRoleArn="$PROWLER_APP_IRSA_ROLE_ARN" \
+        --set app.allowedHosts="$PROWLER_APP_ALLOWED_HOSTS" \
         --set gateway.enabled="$PROWLER_APP_GATEWAY_ENABLED" \
         --set gateway.host="$PROWLER_APP_GATEWAY_HOST" \
+        --set nightlyScans.enabled="$PROWLER_NIGHTLY_SCANS_ENABLED" \
+        --set nightlyScans.auth.existingSecret="$PROWLER_NIGHTLY_SCANS_AUTH_SECRET" \
+        --set nightlyScans.groupA.schedule="0 2 * * *" \
+        --set nightlyScans.groupB.schedule="0 4 * * *" \
+        --set nightlyScans.activeDeadlineSeconds=7200 \
+        --set-string nightlyScans.groupA.providerIds="$PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A" \
+        --set-string nightlyScans.groupB.providerIds="$PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B" \
         --set app.secrets.create=false
   allow_failure: false
   manual_confirmation: "Deploy or upgrade the Prowler App in Kubernetes?"
