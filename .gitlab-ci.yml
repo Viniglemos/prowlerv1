@@ -39,9 +39,6 @@ variables:
   MANAGEMENT_STATE_BUCKET:
     value: ""
     description: "Globally unique S3 bucket name for management account Terraform state, for example state-management-prowler-<management-account-id>."
-  POSTGRES_HOST:
-    value: ""
-    description: "Deploy only: Postgres hostname/server provided by DB team."
   POSTGRES_PORT:
     value: "5432"
     description: "Deploy only: Postgres port."
@@ -350,8 +347,8 @@ deploy_app:
         exit 2
       fi
 
-      if [ -z "$POSTGRES_HOST" ] || [ -z "$POSTGRES_DATABASE" ] || [ -z "$POSTGRES_USER" ]; then
-        echo "POSTGRES_HOST, POSTGRES_DATABASE and POSTGRES_USER are required for deploy." >&2
+      if [ -z "$POSTGRES_HOST" ]; then
+        echo "POSTGRES_HOST is required for deploy. Configure it as a GitLab CI/CD variable or pass it when running the deploy pipeline." >&2
         exit 2
       fi
 
