@@ -20,6 +20,14 @@ spec:
     - matches:
         - path:
             type: PathPrefix
+            value: "/api"
+      backendRefs:
+        - name: {{ include "prowler-app.fullname" . }}-api
+          port: {{ .Values.service.api.port }}
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
             value: {{ .Values.gateway.pathPrefix | quote }}
       backendRefs:
         - name: {{ include "prowler-app.fullname" . }}-ui

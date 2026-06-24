@@ -10,8 +10,8 @@ data:
   PROWLER_MCP_VERSION: {{ .Values.images.mcp.tag | quote }}
   AUTH_URL: {{ required "app.authUrl is required" .Values.app.authUrl | quote }}
   API_BASE_URL: {{ printf "http://%s-api:%v/api/v1" (include "prowler-app.fullname" .) .Values.service.api.port | quote }}
-  NEXT_PUBLIC_API_BASE_URL: {{ printf "http://%s-api:%v/api/v1" (include "prowler-app.fullname" .) .Values.service.api.port | quote }}
-  NEXT_PUBLIC_API_DOCS_URL: {{ printf "http://%s-api:%v/api/v1/docs" (include "prowler-app.fullname" .) .Values.service.api.port | quote }}
+  NEXT_PUBLIC_API_BASE_URL: {{ printf "%s/api/v1" (required "app.authUrl is required" .Values.app.authUrl | trimSuffix "/") | quote }}
+  NEXT_PUBLIC_API_DOCS_URL: {{ printf "%s/api/v1/docs" (required "app.authUrl is required" .Values.app.authUrl | trimSuffix "/") | quote }}
   AUTH_TRUST_HOST: "true"
   UI_PORT: {{ .Values.app.uiPort | quote }}
   PROWLER_MCP_SERVER_URL: {{ ternary (printf "http://%s-mcp:%v/mcp" (include "prowler-app.fullname" .) .Values.service.mcp.port) "" .Values.mcp.enabled | quote }}
