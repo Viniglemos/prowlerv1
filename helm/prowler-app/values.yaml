@@ -62,7 +62,7 @@ valkey:
     storageClassName: ""
   resources:
     requests:
-      cpu: 50m
+      cpu: 25m
       memory: 128Mi
     limits:
       cpu: 250m
@@ -84,7 +84,7 @@ app:
   mcpPort: 8000
   loggingLevel: INFO
   loggingFormatter: human_readable
-  djangoWorkers: 4
+  djangoWorkers: 2
   accessTokenLifetime: 30
   refreshTokenLifetime: 1440
   secrets:
@@ -101,40 +101,40 @@ api:
   replicas: 1
   resources:
     requests:
-      cpu: 150m
+      cpu: 50m
       memory: 384Mi
     limits:
-      cpu: 1000m
+      cpu: 500m
       memory: 1Gi
 
 ui:
   replicas: 1
   resources:
     requests:
-      cpu: 50m
+      cpu: 25m
       memory: 128Mi
     limits:
-      cpu: 500m
+      cpu: 250m
       memory: 512Mi
 
 worker:
   replicas: 1
   resources:
     requests:
-      cpu: 250m
+      cpu: 50m
       memory: 512Mi
     limits:
-      cpu: 2000m
+      cpu: 1000m
       memory: 2Gi
 
 workerBeat:
   enabled: true
   resources:
     requests:
-      cpu: 50m
+      cpu: 25m
       memory: 128Mi
     limits:
-      cpu: 500m
+      cpu: 250m
       memory: 512Mi
 
 mcp:
