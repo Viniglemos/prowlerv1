@@ -20,6 +20,10 @@ workflow:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - when: never
 
+default:
+  tags:
+    - tools
+
 variables:
   PIPELINE_MODE: "$[[ inputs.pipeline_mode ]]"
   POSTGRES_EXISTING_SECRET: "prowler-postgres-secret"
