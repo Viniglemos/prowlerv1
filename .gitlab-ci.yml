@@ -39,6 +39,21 @@ variables:
   MANAGEMENT_STATE_BUCKET:
     value: ""
     description: "Globally unique S3 bucket name for management account Terraform state, for example state-management-prowler-<management-account-id>."
+  POSTGRES_HOST:
+    value: ""
+    description: "Deploy only: Postgres hostname/server provided by DB team."
+  POSTGRES_PORT:
+    value: "5432"
+    description: "Deploy only: Postgres port."
+  POSTGRES_DATABASE:
+    value: "prowler"
+    description: "Deploy only: Postgres database name."
+  POSTGRES_USER:
+    value: "prd_prowler_user"
+    description: "Deploy only: Postgres application user. Use underscores, not hyphens."
+  PROWLER_APP_IRSA_ROLE_ARN:
+    value: ""
+    description: "Deploy only: IRSA role ARN created in the tools/EKS account for the Prowler App ServiceAccount."
 
 stages:
   - validate
