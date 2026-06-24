@@ -9,7 +9,7 @@ imagePullSecrets:
 
 serviceAccount:
   create: true
-  irsaRoleArn: ""
+  irsaRoleArn: "arn:aws:iam::751178672067:role/prowler-app-irsa"
   annotations: {}
   name:
 
