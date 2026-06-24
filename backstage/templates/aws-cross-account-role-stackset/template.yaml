@@ -1,0 +1,54 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: aws-cross-account-role-stackset
+  title: AWS Cross-Account Role StackSet
+  description: Cria uma role padronizada em multiplas contas AWS via CloudFormation StackSet service-managed.
+spec:
+  owner: platform-cloud
+  type: service
+  parameters:
+    - title: Dados da role
+      required:
+        - componentId
+        - roleName
+        - trustedPrincipalArn
+      properties:
+        componentId:
+          title: Nome do componente
+          type: string
+        roleName:
+          title: Nome da role nas contas alvo
+          type: string
+        trustedPrincipalArn:
+          title: Principal autorizado a assumir a role
+          type: string
+          description: Normalmente uma role central, como uma IRSA da conta tools.
+        managedPolicyArns:
+          title: Managed policies
+          type: array
+          items:
+            type: string
+          default:
+            - arn:aws:iam::aws:policy/ReadOnlyAccess
+        awsRegion:
+          title: Regiao AWS
+          type: string
+          default: us-east-1
+  steps:
+    - id: fetch
+      name: Gerar StackSet Terraform
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          componentId: ${{ parameters.componentId }}
+          roleName: ${{ parameters.roleName }}
+          trustedPrincipalArn: ${{ parameters.trustedPrincipalArn }}
+          managedPolicyArns: ${{ parameters.managedPolicyArns }}
+          awsRegion: ${{ parameters.awsRegion }}
+  output:
+    text:
+      - title: Proximo passo
+        content: Aplique este template na management account da AWS Organizations com StackSets service-managed habilitado.
+

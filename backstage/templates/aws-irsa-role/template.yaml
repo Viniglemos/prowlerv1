@@ -1,0 +1,62 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: aws-irsa-role
+  title: AWS IRSA Role
+  description: Cria uma role IAM para workload no EKS usando IRSA, sem access keys.
+spec:
+  owner: platform-cloud
+  type: service
+  parameters:
+    - title: Dados do workload
+      required:
+        - componentId
+        - roleName
+        - namespace
+        - serviceAccountName
+        - oidcProviderArn
+        - oidcProviderUrl
+      properties:
+        componentId:
+          title: Nome do componente
+          type: string
+          description: Nome curto usado para gerar arquivos e recursos.
+        namespace:
+          title: Namespace Kubernetes
+          type: string
+          default: default
+        serviceAccountName:
+          title: ServiceAccount
+          type: string
+        oidcProviderArn:
+          title: OIDC provider ARN
+          type: string
+        oidcProviderUrl:
+          title: OIDC provider URL sem https://
+          type: string
+        roleName:
+          title: Nome da role IAM
+          type: string
+          description: "Exemplo: minha-aplicacao-irsa."
+        awsRegion:
+          title: Regiao AWS
+          type: string
+          default: us-east-1
+  steps:
+    - id: fetch
+      name: Gerar arquivos Terraform
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          componentId: ${{ parameters.componentId }}
+          namespace: ${{ parameters.namespace }}
+          serviceAccountName: ${{ parameters.serviceAccountName }}
+          oidcProviderArn: ${{ parameters.oidcProviderArn }}
+          oidcProviderUrl: ${{ parameters.oidcProviderUrl }}
+          roleName: ${{ parameters.roleName }}
+          awsRegion: ${{ parameters.awsRegion }}
+  output:
+    text:
+      - title: Proximo passo
+        content: Revise a policy em main.tf antes de aplicar. O template cria a trust policy IRSA, mas a permissao AWS do workload deve ser ajustada caso a caso.

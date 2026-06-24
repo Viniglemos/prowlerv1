@@ -57,7 +57,7 @@ valkey:
   password: ""
   database: 0
   persistence:
-    enabled: true
+    enabled: false
     size: 2Gi
     storageClassName: ""
   resources:

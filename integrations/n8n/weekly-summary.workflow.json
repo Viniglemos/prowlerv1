@@ -73,10 +73,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const response = $json;\nconst rows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];\n\nconst findings = rows.map((item) => {\n  const attrs = item.attributes || item;\n  return {\n    provider: attrs.provider || attrs.provider_uid || attrs.account_id || attrs.account || 'unknown',\n    service: String(attrs.service || attrs.service_name || '').toLowerCase(),\n    severity: String(attrs.severity || '').toLowerCase(),\n    status: String(attrs.status || attrs.state || '').toUpperCase(),\n    check: attrs.check_id || attrs.check || attrs.title || attrs.uid || 'unknown-check',\n    title: attrs.title || attrs.description || attrs.check_id || 'Finding without title',\n    region: attrs.region || attrs.region_name || 'global',\n    resource: attrs.resource_uid || attrs.resource_id || attrs.resource || ''\n  };\n}).filter((finding) => {\n  const allowedServices = ['iam', 's3', 'cloudtrail'];\n  const allowedSeverity = ['critical', 'high'];\n  const failedStatuses = ['FAIL', 'FAILED', 'OPEN'];\n  return allowedServices.includes(finding.service)\n    && allowedSeverity.includes(finding.severity)\n    && failedStatuses.includes(finding.status);\n});\n\nconst bySeverity = findings.reduce((acc, finding) => {\n  acc[finding.severity] = (acc[finding.severity] || 0) + 1;\n  return acc;\n}, {});\n\nconst byService = findings.reduce((acc, finding) => {\n  acc[finding.service] = (acc[finding.service] || 0) + 1;\n  return acc;\n}, {});\n\nconst byProvider = findings.reduce((acc, finding) => {\n  acc[finding.provider] = (acc[finding.provider] || 0) + 1;\n  return acc;\n}, {});\n\nconst topFindings = findings.slice(0, 50);\n\nreturn [{\n  json: {\n    generatedAt: new Date().toISOString(),\n    prowlerUrl: $env.PROWLER_APP_URL || '',\n    totalFindings: findings.length,\n    bySeverity,\n    byService,\n    byProvider,\n    topFindings\n  }\n}];"
+        "jsCode": "const response = $json;\nconst rows = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];\n\nconst normalizeText = (value) => String(value ?? \"\").trim();\nconst normalizeLower = (value) => normalizeText(value).toLowerCase();\nconst normalizeUpper = (value) => normalizeText(value).toUpperCase();\n\nconst findings = rows.map((item) => {\n  const attrs = item.attributes || item;\n  return {\n    provider: normalizeText(attrs.provider || attrs.provider_uid || attrs.account_id || attrs.account || attrs.provider_id || \"unknown\"),\n    service: normalizeLower(attrs.service || attrs.service_name),\n    severity: normalizeLower(attrs.severity),\n    status: normalizeUpper(attrs.status || attrs.state),\n    check: normalizeText(attrs.check_id || attrs.check || attrs.uid || attrs.finding_uid || \"unknown-check\"),\n    title: normalizeText(attrs.title || attrs.description || attrs.check_id || \"Finding without title\"),\n    region: normalizeText(attrs.region || attrs.region_name || \"global\"),\n    resourceType: normalizeText(attrs.resource_type || attrs.resource_kind || \"\"),\n    resource: normalizeText(attrs.resource_uid || attrs.resource_id || attrs.resource || \"\")\n  };\n}).filter((finding) => {\n  const allowedServices = [\"iam\", \"s3\", \"cloudtrail\"];\n  const allowedSeverity = [\"critical\", \"high\"];\n  const failedStatuses = [\"FAIL\", \"FAILED\", \"OPEN\"];\n  return allowedServices.includes(finding.service)\n    && allowedSeverity.includes(finding.severity)\n    && failedStatuses.includes(finding.status);\n});\n\nconst countBy = (items, key) => items.reduce((acc, item) => {\n  const value = item[key] || \"unknown\";\n  acc[value] = (acc[value] || 0) + 1;\n  return acc;\n}, {});\n\nconst topEntries = (counts, limit = 10) => Object.entries(counts)\n  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))\n  .slice(0, limit)\n  .map(([name, count]) => ({ name, count }));\n\nconst bySeverity = countBy(findings, \"severity\");\nconst byService = countBy(findings, \"service\");\nconst byProvider = countBy(findings, \"provider\");\nconst byCheck = countBy(findings, \"check\");\n\nconst topFindings = findings\n  .sort((a, b) => {\n    const severityRank = { critical: 0, high: 1 };\n    return (severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9)\n      || a.service.localeCompare(b.service)\n      || a.check.localeCompare(b.check);\n  })\n  .slice(0, 40)\n  .map((finding) => ({\n    provider: finding.provider,\n    service: finding.service,\n    severity: finding.severity,\n    check: finding.check,\n    title: finding.title.slice(0, 180),\n    region: finding.region,\n    resourceType: finding.resourceType\n  }));\n\nreturn [{\n  json: {\n    generatedAt: new Date().toISOString(),\n    prowlerUrl: $env.PROWLER_APP_URL || \"\",\n    scope: {\n      provider: \"aws\",\n      services: [\"iam\", \"s3\", \"cloudtrail\"],\n      severities: [\"critical\", \"high\"],\n      statuses: [\"FAIL\", \"FAILED\", \"OPEN\"],\n      version: \"v1\"\n    },\n    totalFindings: findings.length,\n    bySeverity,\n    byService,\n    topProviders: topEntries(byProvider, 10),\n    topChecks: topEntries(byCheck, 10),\n    topFindings\n  }\n}];"
       },
       "id": "normalize-findings",
-      "name": "Normalize Findings",
+      "name": "Build Agent Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -103,7 +103,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"language\":\"pt-BR\",\"prompt\":\"Summarize the Prowler weekly findings for Teams. Use the project prompt stored in integrations/n8n/weekly-summary-agent.prompt.md.\",\"input\":$json}",
+        "jsonBody": "={\"language\":\"pt-BR\",\"task\":\"Generate a concise Microsoft Teams weekly security summary from filtered Prowler App findings.\",\"instructions\":\"You are a security posture assistant. Summarize only AWS IAM, S3 and CloudTrail findings with critical/high severity and failed/open status. Do not include Kubernetes findings in V1. Do not expose credentials, tokens, account secrets, raw evidence or long resource dumps. Prefer grouped trends, critical risks first, affected accounts/providers, affected services, and practical actions for the week. Return JSON with a summary field containing Teams-ready Markdown in Brazilian Portuguese. Keep it concise and below 20000 characters.\",\"input\":$json}",
         "options": {
           "timeout": 120000
         }
@@ -132,7 +132,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"text\": $json.summary || $json.message || $json.output || JSON.stringify($json)}",
+        "jsonBody": "={\"text\": $json.text}",
         "options": {
           "timeout": 120000
         }
@@ -141,6 +141,19 @@
       "name": "Send Teams Message",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pickSummary = (payload) => {\n  if (!payload || typeof payload !== \"object\") return payload;\n\n  if (payload.summary) return payload.summary;\n  if (payload.message) return payload.message;\n  if (payload.output_text) return payload.output_text;\n  if (payload.output) return payload.output;\n  if (payload.text) return payload.text;\n\n  if (payload.data?.summary) return payload.data.summary;\n  if (payload.result?.summary) return payload.result.summary;\n  if (payload.choices?.[0]?.message?.content) return payload.choices[0].message.content;\n  if (payload.choices?.[0]?.text) return payload.choices[0].text;\n\n  return JSON.stringify(payload);\n};\n\nconst raw = pickSummary($json);\nconst maxChars = 24000;\nlet text = String(raw || \"\").trim();\n\nif (!text) {\n  text = \"**Resumo semanal Prowler**\\n\\nNao foi possivel gerar o resumo automatico. Verifique o workflow n8n e o endpoint do agente.\";\n}\n\nif (text.length > maxChars) {\n  text = text.slice(0, maxChars - 180) + \"\\n\\n_Mensagem truncada para respeitar limite de tamanho do Teams. Consulte o Prowler App para detalhes completos._\";\n}\n\nreturn [{ json: { text } }];"
+      },
+      "id": "format-teams-message",
+      "name": "Format Teams Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         960,
         0
@@ -163,14 +176,25 @@
       "main": [
         [
           {
-            "node": "Normalize Findings",
+            "node": "Build Agent Input",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Normalize Findings": {
+    "Generate Agent Summary": {
+      "main": [
+        [
+          {
+            "node": "Format Teams Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Agent Input": {
       "main": [
         [
           {
@@ -181,7 +205,7 @@
         ]
       ]
     },
-    "Generate Agent Summary": {
+    "Format Teams Message": {
       "main": [
         [
           {
@@ -209,4 +233,3 @@
     }
   ]
 }
-

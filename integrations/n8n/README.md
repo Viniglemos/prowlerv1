@@ -32,6 +32,14 @@ Monday 08:00
 Timezone: America/Sao_Paulo
 ```
 
+The workflow flow is:
+
+1. Read filtered findings from the Prowler App API.
+2. Build a compact agent input with counts, top affected providers, top checks, and representative findings.
+3. Send that compact input to the approved summary agent.
+4. Format the agent response for Teams and truncate it if needed.
+5. Send the weekly message to the Teams channel.
+
 ## Data Source
 
 Prefer the Prowler App API as the source of findings.
@@ -50,6 +58,22 @@ The workflow must summarize only:
 
 Kubernetes findings belong to V2.
 
+## Agent Contract
+
+The agent receives only filtered and summarized data. It must not receive or publish raw evidence, credentials, tokens, account secrets, or large resource dumps.
+
+Expected agent response:
+
+```json
+{
+  "summary": "Teams-ready Markdown summary in Brazilian Portuguese"
+}
+```
+
+If the agent returns plain text instead of JSON, the workflow will still send that text to Teams.
+
+The workflow also accepts common response fields such as `message`, `text`, `output`, `output_text`, and `choices[0].message.content`.
+
 ## Production Checks
 
 Before enabling the schedule:
@@ -59,4 +83,3 @@ Before enabling the schedule:
 3. Run the workflow manually with a small result set.
 4. Confirm the Teams message size is below the connector limit.
 5. Confirm the message does not include raw evidence or credentials.
-

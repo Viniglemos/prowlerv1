@@ -1,0 +1,12 @@
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: prowler-platform-templates
+  description: Templates internos derivados do projeto Prowler App para acelerar workloads de plataforma.
+spec:
+  type: file
+  targets:
+    - ./templates/aws-irsa-role/template.yaml
+    - ./templates/aws-cross-account-role-stackset/template.yaml
+    - ./templates/k8s-private-http-route/template.yaml
+

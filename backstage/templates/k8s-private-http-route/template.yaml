@@ -1,0 +1,68 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: k8s-private-http-route
+  title: Kubernetes Private HTTPRoute
+  description: Cria um HTTPRoute para expor aplicacoes internas via Gateway privado.
+spec:
+  owner: platform-cloud
+  type: service
+  parameters:
+    - title: Dados da rota
+      required:
+        - appName
+        - namespace
+        - hostname
+        - serviceName
+        - servicePort
+        - gatewayName
+        - gatewayNamespace
+        - sectionName
+      properties:
+        appName:
+          title: Nome da aplicacao
+          type: string
+        namespace:
+          title: Namespace
+          type: string
+        hostname:
+          title: Hostname interno
+          type: string
+        serviceName:
+          title: Service backend
+          type: string
+        servicePort:
+          title: Porta do service
+          type: number
+          default: 80
+        gatewayName:
+          title: Gateway privado
+          type: string
+          default: gateway-privado
+        gatewayNamespace:
+          title: Namespace do Gateway
+          type: string
+          default: nginx-gateway-private
+        sectionName:
+          title: Section name HTTPS
+          type: string
+  steps:
+    - id: fetch
+      name: Gerar manifesto
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          appName: ${{ parameters.appName }}
+          namespace: ${{ parameters.namespace }}
+          hostname: ${{ parameters.hostname }}
+          serviceName: ${{ parameters.serviceName }}
+          servicePort: ${{ parameters.servicePort }}
+          gatewayName: ${{ parameters.gatewayName }}
+          gatewayNamespace: ${{ parameters.gatewayNamespace }}
+          sectionName: ${{ parameters.sectionName }}
+  output:
+    text:
+      - title: Proximo passo
+        content: Confirme DNS, VPN e listener do Gateway antes de aplicar em producao.
+
