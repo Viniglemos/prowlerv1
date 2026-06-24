@@ -18,6 +18,8 @@ spec:
       labels:
         {{- include "prowler-app.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: ui
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- if .Values.imagePullSecrets.enabled }}
       imagePullSecrets:

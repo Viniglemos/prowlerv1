@@ -19,6 +19,8 @@ spec:
       labels:
         {{- include "prowler-app.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: worker-beat
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "prowler-app.serviceAccountName" . }}
       {{- if .Values.imagePullSecrets.enabled }}
