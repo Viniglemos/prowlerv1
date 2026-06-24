@@ -41,12 +41,12 @@ images:
 
 postgres:
   external: true
-  host: ""
+  host: "toolss-educacional.cgeugefwnixv.us-east-1.rds.amazonaws.com"
   port: 5432
   database: prowler
   adminUser: prd_prowler_user
   appUser: prd_prowler_user
-  existingSecret: ""
+  existingSecret: "prowler-enviado-pelo-db"
   adminPasswordKey: POSTGRES_ADMIN_PASSWORD
   appPasswordKey: POSTGRES_PASSWORD
 
@@ -77,14 +77,14 @@ neo4j:
   passwordKey: NEO4J_PASSWORD
 
 app:
-  authUrl: ""
+  authUrl: "https://prowler.educacional.app"
   allowedHosts: "localhost,127.0.0.1,prowler-app-api,prowler.educacional.app"
   djangoPort: 8080
   uiPort: 3000
   mcpPort: 8000
   loggingLevel: INFO
   loggingFormatter: human_readable
-  djangoWorkers: 1
+  djangoWorkers: 4
   accessTokenLifetime: 30
   refreshTokenLifetime: 1440
   secrets:
