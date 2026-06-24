@@ -84,7 +84,7 @@ app:
   mcpPort: 8000
   loggingLevel: INFO
   loggingFormatter: human_readable
-  djangoWorkers: 2
+  djangoWorkers: 1
   accessTokenLifetime: 30
   refreshTokenLifetime: 1440
   secrets:
@@ -105,7 +105,7 @@ api:
       memory: 384Mi
     limits:
       cpu: 500m
-      memory: 1Gi
+      memory: 2Gi
 
 ui:
   replicas: 1

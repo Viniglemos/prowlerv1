@@ -46,12 +46,11 @@ spec:
             - secretRef:
                 name: {{ include "prowler-app.postgresSecretName" . }}
           readinessProbe:
-            httpGet:
-              path: /health/live
+            tcpSocket:
               port: http
             initialDelaySeconds: 30
             periodSeconds: 10
-            timeoutSeconds: 10
+            timeoutSeconds: 5
             failureThreshold: 18
           livenessProbe:
             tcpSocket:
