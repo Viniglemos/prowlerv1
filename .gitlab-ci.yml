@@ -26,7 +26,7 @@ default:
 
 variables:
   PIPELINE_MODE: "$[[ inputs.pipeline_mode ]]"
-  POSTGRES_EXISTING_SECRET: "prowler-postgres-secret"
+  POSTGRES_EXISTING_SECRET: "prowler-enviado-pelo-db"
   PROWLER_APP_EXISTING_SECRET: "prowler-app-secret"
   AWS_ACCESS_KEY_ID:
     value: ""
@@ -43,15 +43,6 @@ variables:
   MANAGEMENT_STATE_BUCKET:
     value: ""
     description: "Globally unique S3 bucket name for management account Terraform state, for example state-management-prowler-<management-account-id>."
-  POSTGRES_PORT:
-    value: "5432"
-    description: "Deploy only: Postgres port."
-  POSTGRES_DATABASE:
-    value: "prowler"
-    description: "Deploy only: Postgres database name."
-  POSTGRES_USER:
-    value: "prd_prowler_user"
-    description: "Deploy only: Postgres application user. Use underscores, not hyphens."
   PROWLER_APP_IRSA_ROLE_ARN:
     value: ""
     description: "Deploy only: IRSA role ARN created in the tools/EKS account for the Prowler App ServiceAccount."
@@ -340,22 +331,9 @@ deploy_app:
       PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A="${PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_A:-}"
       PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B="${PROWLER_NIGHTLY_PROVIDER_IDS_GROUP_B:-}"
       PROWLER_MCP_ENABLED="${PROWLER_MCP_ENABLED:-false}"
-      POSTGRES_PORT="${POSTGRES_PORT:-5432}"
-      POSTGRES_DATABASE="${POSTGRES_DATABASE:-prowler}"
-      POSTGRES_USER="${POSTGRES_USER:-prd_prowler_user}"
       PROWLER_APP_ALLOWED_HOSTS_HELM="$(printf '%s' "$PROWLER_APP_ALLOWED_HOSTS" | sed 's/,/\\,/g')"
 
-      if [ -z "$POSTGRES_EXISTING_SECRET" ]; then
-        echo "POSTGRES_EXISTING_SECRET is required for deploy." >&2
-        exit 2
-      fi
-
-      if [ -z "$POSTGRES_HOST" ]; then
-        echo "POSTGRES_HOST is required for deploy. Configure it as a GitLab CI/CD variable or pass it when running the deploy pipeline." >&2
-        exit 2
-      fi
-
-      if ! printf '%s' "$POSTGRES_USER" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
+      if [ -n "$POSTGRES_USER" ] && ! printf '%s' "$POSTGRES_USER" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
         echo "POSTGRES_USER must be a PostgreSQL identifier without hyphens because Prowler migrations create roles with this value. Use underscores, for example prd_prowler_user." >&2
         exit 2
       fi
@@ -369,17 +347,29 @@ deploy_app:
         IRSA_SET="--set serviceAccount.irsaRoleArn=$PROWLER_APP_IRSA_ROLE_ARN"
       fi
 
+      POSTGRES_SET=""
+      if [ -n "$POSTGRES_HOST" ]; then
+        POSTGRES_SET="$POSTGRES_SET --set postgres.host=$POSTGRES_HOST"
+      fi
+      if [ -n "$POSTGRES_PORT" ]; then
+        POSTGRES_SET="$POSTGRES_SET --set postgres.port=$POSTGRES_PORT"
+      fi
+      if [ -n "$POSTGRES_DATABASE" ]; then
+        POSTGRES_SET="$POSTGRES_SET --set postgres.database=$POSTGRES_DATABASE"
+      fi
+      if [ -n "$POSTGRES_USER" ]; then
+        POSTGRES_SET="$POSTGRES_SET --set postgres.adminUser=$POSTGRES_USER --set postgres.appUser=$POSTGRES_USER"
+      fi
+      if [ -n "$POSTGRES_EXISTING_SECRET" ]; then
+        POSTGRES_SET="$POSTGRES_SET --set postgres.existingSecret=$POSTGRES_EXISTING_SECRET"
+      fi
+
       kubectl config use-context "$AGENT_CONTEXT"
       kubectl create namespace "$KUBE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
       helm upgrade --install "$HELM_RELEASE_NAME" helm/prowler-app \
         --namespace "$KUBE_NAMESPACE" \
         --set app.authUrl="$PROWLER_APP_AUTH_URL" \
-        --set postgres.host="$POSTGRES_HOST" \
-        --set postgres.port="$POSTGRES_PORT" \
-        --set postgres.database="$POSTGRES_DATABASE" \
-        --set postgres.adminUser="$POSTGRES_USER" \
-        --set postgres.appUser="$POSTGRES_USER" \
-        --set postgres.existingSecret="$POSTGRES_EXISTING_SECRET" \
+        $POSTGRES_SET \
         $IRSA_SET \
         --set-string app.allowedHosts="$PROWLER_APP_ALLOWED_HOSTS_HELM" \
         --set gateway.enabled="$PROWLER_APP_GATEWAY_ENABLED" \
