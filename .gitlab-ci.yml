@@ -282,12 +282,28 @@ update_prowler_app_secret:
       KUBE_NAMESPACE="${KUBE_NAMESPACE:-security-audit}"
       PROWLER_APP_EXISTING_SECRET="${PROWLER_APP_EXISTING_SECRET:-prowler-app-secret}"
 
+      decode_base64_secret() {
+        secret_name="$1"
+        secret_value="$2"
+        normalized="$(printf '%s' "$secret_value" | tr -d '\r\n\t ')"
+        padding=$(( (4 - ${#normalized} % 4) % 4 ))
+        while [ "$padding" -gt 0 ]; do
+          normalized="${normalized}="
+          padding=$((padding - 1))
+        done
+
+        if ! printf '%s' "$normalized" | base64 -d; then
+          echo "Invalid Base64 value in $secret_name. Recreate it from the PEM file and paste the full single-line output in GitLab Variables." >&2
+          exit 2
+        fi
+      }
+
       if [ -n "${DJANGO_TOKEN_SIGNING_KEY_B64:-}" ]; then
-        DJANGO_TOKEN_SIGNING_KEY="$(printf '%s' "$DJANGO_TOKEN_SIGNING_KEY_B64" | base64 -d)"
+        DJANGO_TOKEN_SIGNING_KEY="$(decode_base64_secret DJANGO_TOKEN_SIGNING_KEY_B64 "$DJANGO_TOKEN_SIGNING_KEY_B64")"
       fi
 
       if [ -n "${DJANGO_TOKEN_VERIFYING_KEY_B64:-}" ]; then
-        DJANGO_TOKEN_VERIFYING_KEY="$(printf '%s' "$DJANGO_TOKEN_VERIFYING_KEY_B64" | base64 -d)"
+        DJANGO_TOKEN_VERIFYING_KEY="$(decode_base64_secret DJANGO_TOKEN_VERIFYING_KEY_B64 "$DJANGO_TOKEN_VERIFYING_KEY_B64")"
       fi
 
       if [ -z "$AUTH_SECRET" ] || [ -z "$DJANGO_TOKEN_SIGNING_KEY" ] || [ -z "$DJANGO_TOKEN_VERIFYING_KEY" ] || [ -z "$DJANGO_SECRETS_ENCRYPTION_KEY" ]; then
