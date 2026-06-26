@@ -282,8 +282,16 @@ update_prowler_app_secret:
       KUBE_NAMESPACE="${KUBE_NAMESPACE:-security-audit}"
       PROWLER_APP_EXISTING_SECRET="${PROWLER_APP_EXISTING_SECRET:-prowler-app-secret}"
 
+      if [ -n "${DJANGO_TOKEN_SIGNING_KEY_B64:-}" ]; then
+        DJANGO_TOKEN_SIGNING_KEY="$(printf '%s' "$DJANGO_TOKEN_SIGNING_KEY_B64" | base64 -d)"
+      fi
+
+      if [ -n "${DJANGO_TOKEN_VERIFYING_KEY_B64:-}" ]; then
+        DJANGO_TOKEN_VERIFYING_KEY="$(printf '%s' "$DJANGO_TOKEN_VERIFYING_KEY_B64" | base64 -d)"
+      fi
+
       if [ -z "$AUTH_SECRET" ] || [ -z "$DJANGO_TOKEN_SIGNING_KEY" ] || [ -z "$DJANGO_TOKEN_VERIFYING_KEY" ] || [ -z "$DJANGO_SECRETS_ENCRYPTION_KEY" ]; then
-        echo "AUTH_SECRET, DJANGO_TOKEN_SIGNING_KEY, DJANGO_TOKEN_VERIFYING_KEY and DJANGO_SECRETS_ENCRYPTION_KEY are required as masked GitLab variables." >&2
+        echo "AUTH_SECRET, DJANGO_TOKEN_SIGNING_KEY or DJANGO_TOKEN_SIGNING_KEY_B64, DJANGO_TOKEN_VERIFYING_KEY or DJANGO_TOKEN_VERIFYING_KEY_B64, and DJANGO_SECRETS_ENCRYPTION_KEY are required as masked GitLab variables." >&2
         exit 2
       fi
 
