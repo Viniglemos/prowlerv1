@@ -41,6 +41,8 @@ data:
   DJANGO_LOGGING_FORMATTER: {{ .Values.app.loggingFormatter | quote }}
   DJANGO_LOGGING_LEVEL: {{ .Values.app.loggingLevel | quote }}
   DJANGO_WORKERS: {{ .Values.app.djangoWorkers | quote }}
+  GUNICORN_TIMEOUT: {{ .Values.app.gunicornTimeout | quote }}
+  GUNICORN_KEEPALIVE: {{ .Values.app.gunicornKeepalive | quote }}
   DJANGO_ACCESS_TOKEN_LIFETIME: {{ .Values.app.accessTokenLifetime | quote }}
   DJANGO_REFRESH_TOKEN_LIFETIME: {{ .Values.app.refreshTokenLifetime | quote }}
   DJANGO_CACHE_MAX_AGE: "3600"

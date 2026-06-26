@@ -85,6 +85,8 @@ app:
   loggingLevel: INFO
   loggingFormatter: human_readable
   djangoWorkers: 2
+  gunicornTimeout: 300
+  gunicornKeepalive: 75
   accessTokenLifetime: 30
   refreshTokenLifetime: 1440
   secrets:
@@ -101,11 +103,11 @@ api:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 512Mi
+      cpu: 500m
+      memory: 1Gi
     limits:
-      cpu: 1000m
-      memory: 2Gi
+      cpu: 2000m
+      memory: 3Gi
 
 ui:
   replicas: 1
