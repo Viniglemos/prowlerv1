@@ -1,0 +1,25 @@
+{{- if and .Values.gateway.enabled .Values.gateway.proxySettingsPolicy.enabled }}
+apiVersion: gateway.nginx.org/v1alpha1
+kind: ProxySettingsPolicy
+metadata:
+  name: {{ include "prowler-app.fullname" . }}-proxy-settings
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "prowler-app.labels" . | nindent 4 }}
+    app: {{ include "prowler-app.fullname" . }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "prowler-app.fullname" . }}
+  buffering:
+    bufferSize: {{ .Values.gateway.proxySettingsPolicy.buffering.bufferSize | quote }}
+    buffers:
+      number: {{ .Values.gateway.proxySettingsPolicy.buffering.buffers.number }}
+      size: {{ .Values.gateway.proxySettingsPolicy.buffering.buffers.size | quote }}
+    busyBuffersSize: {{ .Values.gateway.proxySettingsPolicy.buffering.busyBuffersSize | quote }}
+  timeout:
+    connect: {{ .Values.gateway.proxySettingsPolicy.timeout.connect | quote }}
+    read: {{ .Values.gateway.proxySettingsPolicy.timeout.read | quote }}
+    send: {{ .Values.gateway.proxySettingsPolicy.timeout.send | quote }}
+{{- end }}

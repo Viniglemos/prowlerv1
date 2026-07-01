@@ -1,0 +1,115 @@
+{
+  "name": "prowler-weekly-security-specialist",
+  "version": "1.0.0",
+  "language": "pt-BR",
+  "scope": {
+    "provider": "aws",
+    "services": [
+      "iam",
+      "s3",
+      "cloudtrail"
+    ],
+    "severities": [
+      "critical",
+      "high"
+    ],
+    "statuses": [
+      "FAIL",
+      "FAILED",
+      "OPEN"
+    ],
+    "projectVersion": "v1"
+  },
+  "request": {
+    "method": "POST",
+    "url": "${OPENAI_API_BASE_URL}/responses",
+    "headers": {
+      "Authorization": "Bearer ${OPENAI_API_KEY}",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "model": "${OPENAI_MODEL}",
+      "store": false,
+      "text": {
+        "format": {
+          "type": "json_schema",
+          "name": "prowler_weekly_summary",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "summary": {
+                "type": "string",
+                "description": "Teams-ready Markdown summary in Brazilian Portuguese"
+              }
+            },
+            "required": [
+              "summary"
+            ]
+          }
+        },
+        "verbosity": "low"
+      },
+      "input": [
+        {
+          "role": "system",
+          "content": "Use the specialist prompt from weekly-summary-agent.prompt.md."
+        },
+        {
+          "role": "user",
+          "content": {
+            "generatedAt": "2026-01-01T00:00:00.000Z",
+            "prowlerUrl": "https://prowler.educacional.app",
+            "scope": {
+              "provider": "aws",
+              "services": [
+                "iam",
+                "s3",
+                "cloudtrail"
+              ],
+              "severities": [
+                "critical",
+                "high"
+              ],
+              "statuses": [
+                "FAIL",
+                "FAILED",
+                "OPEN"
+              ],
+              "version": "v1"
+            },
+            "totalFindings": 0,
+            "bySeverity": {},
+            "byService": {},
+            "topProviders": [],
+            "topChecks": [],
+            "topFindings": []
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "preferred": {
+      "summary": "Teams-ready Markdown summary in Brazilian Portuguese"
+    },
+    "acceptedFallbackFields": [
+      "message",
+      "text",
+      "output",
+      "output_text",
+      "data.summary",
+      "result.summary",
+      "choices[0].message.content",
+      "choices[0].text"
+    ]
+  },
+  "securityRules": [
+    "Do not send credentials or tokens to the summary agent.",
+    "Do not send raw evidence dumps.",
+    "Do not include Kubernetes findings in V1.",
+    "Do not include full resource identifiers unless needed to understand a critical risk.",
+    "Do not recommend destructive automation."
+  ]
+}

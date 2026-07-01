@@ -26,6 +26,17 @@
       ]
     },
     {
+      "parameters": {},
+      "id": "manual-test",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160
+      ]
+    },
+    {
       "parameters": {
         "url": "={{$env.PROWLER_API_BASE_URL}}/findings",
         "sendQuery": true,
@@ -42,6 +53,10 @@
             {
               "name": "filter[service]",
               "value": "iam,s3,cloudtrail"
+            },
+            {
+              "name": "page[size]",
+              "value": "100"
             }
           ]
         },
@@ -87,13 +102,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.SUMMARY_AGENT_URL}}",
+        "url": "={{($env.OPENAI_API_BASE_URL || \"https://api.openai.com/v1\") + \"/responses\"}}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "=Bearer {{$env.SUMMARY_AGENT_TOKEN}}"
+              "value": "=Bearer {{$env.OPENAI_API_KEY}}"
             },
             {
               "name": "Content-Type",
@@ -103,13 +118,13 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"language\":\"pt-BR\",\"task\":\"Generate a concise Microsoft Teams weekly security summary from filtered Prowler App findings.\",\"instructions\":\"You are a security posture assistant. Summarize only AWS IAM, S3 and CloudTrail findings with critical/high severity and failed/open status. Do not include Kubernetes findings in V1. Do not expose credentials, tokens, account secrets, raw evidence or long resource dumps. Prefer grouped trends, critical risks first, affected accounts/providers, affected services, and practical actions for the week. Return JSON with a summary field containing Teams-ready Markdown in Brazilian Portuguese. Keep it concise and below 20000 characters.\",\"input\":$json}",
+        "jsonBody": "={\"model\":$env.OPENAI_MODEL,\"store\":false,\"temperature\":0.2,\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"prowler_weekly_summary\",\"strict\":true,\"schema\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"summary\":{\"type\":\"string\",\"description\":\"Markdown simples em portugues do Brasil pronto para Microsoft Teams.\"}},\"required\":[\"summary\"]}},\"verbosity\":\"low\"},\"input\":[{\"role\":\"system\",\"content\":\"Voce e um agente especialista em postura de seguranca cloud para apoiar o time interno na leitura semanal dos findings do Prowler App. Analise somente AWS IAM, S3 e CloudTrail, severidades critical/high e status failed/open. Nao inclua Kubernetes no V1. Nao exponha credenciais, tokens, segredos, account secrets, evidencias brutas extensas, dumps grandes de recursos ou descricoes copiadas em excesso. Nao invente findings e nao recomende automacao destrutiva. Quando houver incerteza, diga o que precisa ser validado no Prowler App. Priorize findings critical, findings high com impacto amplo, checks repetidos em varias contas, provedores mais afetados e riscos estruturais de IAM, S3 e CloudTrail. Retorne JSON no schema solicitado. O campo summary deve conter Markdown simples em portugues do Brasil pronto para Microsoft Teams, com as secoes: Resumo executivo, Principais riscos, Contas/provedores mais afetados, Servicos mais afetados, Acoes recomendadas para a semana e Observacoes. Se nao houver findings critical/high, informe isso claramente e recomende manter monitoramento. Inclua o link interno do Prowler App no final quando prowlerUrl estiver preenchido.\"},{\"role\":\"user\",\"content\":\"Generate the weekly Prowler App security summary from this filtered input:\\n\\n\" + JSON.stringify($json)}]}",
         "options": {
           "timeout": 120000
         }
       },
       "id": "generate-agent-summary",
-      "name": "Generate Agent Summary",
+      "name": "Generate OpenAI Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -148,7 +163,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const pickSummary = (payload) => {\n  if (!payload || typeof payload !== \"object\") return payload;\n\n  if (payload.summary) return payload.summary;\n  if (payload.message) return payload.message;\n  if (payload.output_text) return payload.output_text;\n  if (payload.output) return payload.output;\n  if (payload.text) return payload.text;\n\n  if (payload.data?.summary) return payload.data.summary;\n  if (payload.result?.summary) return payload.result.summary;\n  if (payload.choices?.[0]?.message?.content) return payload.choices[0].message.content;\n  if (payload.choices?.[0]?.text) return payload.choices[0].text;\n\n  return JSON.stringify(payload);\n};\n\nconst raw = pickSummary($json);\nconst maxChars = 24000;\nlet text = String(raw || \"\").trim();\n\nif (!text) {\n  text = \"**Resumo semanal Prowler**\\n\\nNao foi possivel gerar o resumo automatico. Verifique o workflow n8n e o endpoint do agente.\";\n}\n\nif (text.length > maxChars) {\n  text = text.slice(0, maxChars - 180) + \"\\n\\n_Mensagem truncada para respeitar limite de tamanho do Teams. Consulte o Prowler App para detalhes completos._\";\n}\n\nreturn [{ json: { text } }];"
+        "jsCode": "const extractOpenAIOutput = (payload) => {\n  if (!Array.isArray(payload?.output)) return \"\";\n\n  return payload.output\n    .flatMap((item) => Array.isArray(item?.content) ? item.content : [])\n    .map((content) => content?.text || content?.content || \"\")\n    .filter(Boolean)\n    .join(\"\\n\")\n    .trim();\n};\n\nconst pickSummary = (payload) => {\n  if (!payload || typeof payload !== \"object\") return payload;\n\n  if (payload.summary) return payload.summary;\n  if (payload.message) return payload.message;\n  if (payload.output_text) return payload.output_text;\n\n  const openAIOutput = extractOpenAIOutput(payload);\n  if (openAIOutput) return openAIOutput;\n\n  if (typeof payload.output === \"string\") return payload.output;\n  if (payload.text) return payload.text;\n\n  if (payload.data?.summary) return payload.data.summary;\n  if (payload.result?.summary) return payload.result.summary;\n  if (payload.choices?.[0]?.message?.content) return payload.choices[0].message.content;\n  if (payload.choices?.[0]?.text) return payload.choices[0].text;\n\n  return JSON.stringify(payload);\n};\n\nconst maybeParseSummary = (value) => {\n  const text = String(value || \"\").trim();\n  if (!text.startsWith(\"{\")) return text;\n\n  try {\n    const parsed = JSON.parse(text);\n    return parsed.summary || parsed.message || parsed.text || text;\n  } catch {\n    return text;\n  }\n};\n\nconst raw = pickSummary($json);\nconst maxChars = 24000;\nlet text = maybeParseSummary(raw);\n\nif (!text) {\n  text = \"**Resumo semanal Prowler**\\n\\nNao foi possivel gerar o resumo automatico. Verifique o workflow n8n e o endpoint da OpenAI.\";\n}\n\nif (text.length > maxChars) {\n  text = text.slice(0, maxChars - 180) + \"\\n\\n_Mensagem truncada para respeitar limite de tamanho do Teams. Consulte o Prowler App para detalhes completos._\";\n}\n\nreturn [{ json: { text } }];"
       },
       "id": "format-teams-message",
       "name": "Format Teams Message",
@@ -172,6 +187,17 @@
         ]
       ]
     },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Get Prowler Findings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Get Prowler Findings": {
       "main": [
         [
@@ -183,7 +209,7 @@
         ]
       ]
     },
-    "Generate Agent Summary": {
+    "Generate OpenAI Summary": {
       "main": [
         [
           {
@@ -198,7 +224,7 @@
       "main": [
         [
           {
-            "node": "Generate Agent Summary",
+            "node": "Generate OpenAI Summary",
             "type": "main",
             "index": 0
           }

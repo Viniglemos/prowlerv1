@@ -127,7 +127,7 @@ worker:
       memory: 512Mi
     limits:
       cpu: 1000m
-      memory: 2Gi
+      memory: 4Gi
 
 workerBeat:
   enabled: true
@@ -177,6 +177,18 @@ gateway:
       name: "gateway-privado"
       namespace: "nginx-gateway-private"
       sectionName: "http"
+  proxySettingsPolicy:
+    enabled: false
+    buffering:
+      bufferSize: "64k"
+      buffers:
+        number: 16
+        size: "64k"
+      busyBuffersSize: "128k"
+    timeout:
+      connect: "30s"
+      read: "300s"
+      send: "300s"
 
 nightlyScans:
   enabled: false
