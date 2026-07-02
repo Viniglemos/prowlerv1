@@ -31,6 +31,39 @@ The current direction is intentionally simple:
         `-- templates/
 ```
 
+## Repository Remotes
+
+This repository uses two remotes with different purposes:
+
+- `origin`: GitLab remote used for delivery, pipeline execution, and production change flow.
+- `github`: GitHub remote used as a secondary mirror for documentation reading, external research support, and code/context review.
+
+Operational expectation:
+
+- GitLab remains the authoritative delivery remote.
+- GitHub can be kept synchronized so external assistants and future contributors can read the latest architecture and implementation context.
+- Documentation in this repository must stay current whenever behavior, infrastructure, or operational flow changes.
+
+## Documentation Maintenance
+
+The repository documentation is part of the operational deliverable.
+
+Every relevant change should update the affected docs in the same work cycle, especially when changing:
+
+- Helm values or templates;
+- pipeline behavior;
+- AWS access model;
+- runtime architecture;
+- persistence model;
+- integrations such as Teams, n8n, MCP, or scan orchestration.
+
+Primary documentation files:
+
+- [README.md](/Users/viniciusgulartelemos/PROWLERAUDIT/README.md:1)
+- [docs/prowler-app-implementation.md](/Users/viniciusgulartelemos/PROWLERAUDIT/docs/prowler-app-implementation.md:1)
+- [docs/prowler-app-technical-reference.md](/Users/viniciusgulartelemos/PROWLERAUDIT/docs/prowler-app-technical-reference.md:1)
+- [docs/prowler-app-infra-overview.md](/Users/viniciusgulartelemos/PROWLERAUDIT/docs/prowler-app-infra-overview.md:1)
+
 ## Helm Chart
 
 The chart is in `helm/prowler-app`.
@@ -199,6 +232,51 @@ Prowler App
 ```
 
 The optional workflow template is in `integrations/n8n`. It must be configured with n8n-side environment variables and must not store tokens or webhook URLs in Git.
+
+## Conversational Teams Agent with Prowler MCP
+
+The recommended conversational path is private-only:
+
+```text
+Microsoft Teams
+  -> Power Automate or n8n inbound webhook
+  -> approved LLM agent runtime
+  -> Prowler MCP internal service
+  -> Prowler App data
+```
+
+Do not expose the MCP service through the public or private Gateway. The chart creates the MCP service as `ClusterIP` only:
+
+```text
+prowler-app-mcp:8000
+```
+
+Enable MCP only when the agent runtime can reach the Kubernetes service privately:
+
+```yaml
+mcp:
+  enabled: true
+```
+
+For tighter isolation, enable the optional MCP NetworkPolicy and allow only the n8n/agent pods:
+
+```yaml
+mcp:
+  enabled: true
+  networkPolicy:
+    enabled: true
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: "<n8n-or-agent-namespace>"
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: "<n8n-or-agent-app-label>"
+```
+
+The conversational agent should be read-only in V1. It may answer questions about Prowler findings, affected accounts/providers, IAM/S3/CloudTrail risk concentration, and weekly prioritization. It must not execute remediation, expose raw evidence dumps, publish credentials, or include Kubernetes findings in V1.
+
+Keep the weekly Teams summary workflow as the first production integration. Add the conversational MCP path after the MCP service is reachable from the approved private agent runtime.
 
 ## AWS Access Roles
 
